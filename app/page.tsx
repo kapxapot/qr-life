@@ -15,7 +15,7 @@ export default function Home() {
       <div className="absolute left-[8%] top-16 -z-10 h-44 w-44 animate-pulse rounded-full bg-cyan-400/18 blur-3xl [animation-delay:160ms] animation-duration-[11s]" />
       <div className="absolute bottom-[10%] right-[12%] -z-10 h-52 w-52 animate-pulse rounded-full bg-fuchsia-500/16 blur-3xl [animation-delay:1.6s] animation-duration-[14s]" />
 
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-6 py-10 sm:px-8 lg:px-12">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-start px-6 pb-10 pt-16 sm:px-8 sm:pb-12 sm:pt-20 lg:px-12 lg:pb-14 lg:pt-24">
         <section className="mx-auto max-w-3xl text-center">
           <h1 className="mt-6 text-xl font-semibold tracking-tight text-white sm:text-2xl lg:text-3xl">
             Scan a QR to{" "}

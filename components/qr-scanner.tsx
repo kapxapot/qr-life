@@ -1,49 +1,111 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import type { LifeGrid } from "@/lib/game-of-life";
-import { createSeedFromVideo } from "@/lib/qr-seed";
+import { type JsQrBitMatrix, type JsQrLocation, jsQr } from "@/lib/jsqr";
+import { createSeedFromQrMatrix } from "@/lib/qr-seed";
 
 type ScannerStatus = "idle" | "starting" | "ready" | "unsupported" | "error";
 
-type DetectedBarcode = {
-  boundingBox?: DOMRectReadOnly;
-  rawValue?: string;
-};
-
-type BarcodeDetectorInstance = {
-  detect(source: ImageBitmapSource): Promise<DetectedBarcode[]>;
-};
-
-type BarcodeDetectorConstructor = new (options?: {
-  formats?: string[];
-}) => BarcodeDetectorInstance;
+const REQUIRED_CONFIRMATION_FRAMES = 3;
 
 type Props = {
   onScan: (seed: LifeGrid, qrValue: string | null) => void;
 };
 
-declare global {
-  interface Window {
-    BarcodeDetector?: BarcodeDetectorConstructor;
-  }
+type PendingDetection = {
+  hits: number;
+  key: string;
+};
+
+function getPointDistance(
+  firstPoint: { x: number; y: number },
+  secondPoint: { x: number; y: number },
+) {
+  return Math.hypot(secondPoint.x - firstPoint.x, secondPoint.y - firstPoint.y);
 }
 
-function getBarcodeDetector() {
-  if (typeof window === "undefined") {
-    return null;
+function isDetectionPlausible(
+  location: JsQrLocation,
+  width: number,
+  height: number,
+) {
+  const points = [
+    location.topLeftCorner,
+    location.topRightCorner,
+    location.bottomRightCorner,
+    location.bottomLeftCorner,
+  ];
+
+  if (
+    points.some(
+      ({ x, y }) =>
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        x < 0 ||
+        y < 0 ||
+        x > width ||
+        y > height,
+    )
+  ) {
+    return false;
   }
 
-  return window.BarcodeDetector ?? null;
+  const topWidth = getPointDistance(
+    location.topLeftCorner,
+    location.topRightCorner,
+  );
+  const bottomWidth = getPointDistance(
+    location.bottomLeftCorner,
+    location.bottomRightCorner,
+  );
+  const leftHeight = getPointDistance(
+    location.topLeftCorner,
+    location.bottomLeftCorner,
+  );
+  const rightHeight = getPointDistance(
+    location.topRightCorner,
+    location.bottomRightCorner,
+  );
+  const averageWidth = (topWidth + bottomWidth) / 2;
+  const averageHeight = (leftHeight + rightHeight) / 2;
+  const frameArea = width * height;
+  const qrAreaRatio = (averageWidth * averageHeight) / Math.max(frameArea, 1);
+  const aspectRatio = averageWidth / Math.max(averageHeight, 1);
+  const centerX =
+    (location.topLeftCorner.x +
+      location.topRightCorner.x +
+      location.bottomLeftCorner.x +
+      location.bottomRightCorner.x) /
+    4;
+  const centerY =
+    (location.topLeftCorner.y +
+      location.topRightCorner.y +
+      location.bottomLeftCorner.y +
+      location.bottomRightCorner.y) /
+    4;
+  const isCentered =
+    centerX >= width * 0.15 &&
+    centerX <= width * 0.85 &&
+    centerY >= height * 0.15 &&
+    centerY <= height * 0.85;
+
+  return (
+    qrAreaRatio >= 0.01 &&
+    aspectRatio >= 0.55 &&
+    aspectRatio <= 1.8 &&
+    isCentered
+  );
 }
 
 export function QrScanner({ onScan }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const detectingRef = useRef(false);
-
+  const pendingDetectionRef = useRef<PendingDetection | null>(null);
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("idle");
   const [scannerMessage, setScannerMessage] = useState(
     "Enable your camera and point it at a QR code.",
@@ -60,6 +122,7 @@ export function QrScanner({ onScan }: Props) {
     }
 
     streamRef.current = null;
+    pendingDetectionRef.current = null;
 
     if (videoRef.current) {
       videoRef.current.srcObject = null;
@@ -67,35 +130,28 @@ export function QrScanner({ onScan }: Props) {
   }, []);
 
   const completeScan = useCallback(
-    (barcode: DetectedBarcode) => {
-      const video = videoRef.current;
-
-      if (!video || !barcode.boundingBox) {
-        return;
-      }
-
+    (rawValue: string | null, matrix: JsQrBitMatrix) => {
       try {
-        const seed = createSeedFromVideo(video, barcode.boundingBox);
+        const seed = createSeedFromQrMatrix(matrix);
 
         stopCamera();
-        onScan(seed, barcode.rawValue ?? "QR code detected");
+        onScan(seed, rawValue);
       } catch (error) {
         setScannerStatus("error");
         setScannerMessage(
           error instanceof Error
             ? error.message
-            : "This browser couldn't turn the QR frame into a Life seed.",
+            : "The scanner couldn't turn the detected QR into a Life seed.",
         );
       }
     },
     [onScan, stopCamera],
   );
 
-  const detectCode = useCallback(async () => {
-    const detector = detectorRef.current;
+  const detectCode = useCallback(() => {
     const video = videoRef.current;
 
-    if (!detector || !video || detectingRef.current) {
+    if (!video || detectingRef.current) {
       return;
     }
 
@@ -103,18 +159,82 @@ export function QrScanner({ onScan }: Props) {
       return;
     }
 
+    const maxScanSide = 720;
+    const longestSide = Math.max(video.videoWidth, video.videoHeight);
+    const scale = longestSide > maxScanSide ? maxScanSide / longestSide : 1;
+    const width = Math.max(1, Math.round(video.videoWidth * scale));
+    const height = Math.max(1, Math.round(video.videoHeight * scale));
+    const canvas = scanCanvasRef.current ?? document.createElement("canvas");
+
+    scanCanvasRef.current = canvas;
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (!context) {
+      setScannerStatus("error");
+      setScannerMessage("Canvas sampling is unavailable in this browser.");
+      return;
+    }
+
     detectingRef.current = true;
 
     try {
-      const results = await detector.detect(video);
-      const match = results.find((result) => result.boundingBox);
+      context.drawImage(video, 0, 0, width, height);
 
-      if (match) {
-        completeScan(match);
+      const imageData = context.getImageData(0, 0, width, height);
+      const code = jsQr(imageData.data, width, height, {
+        inversionAttempts: "dontInvert",
+      });
+
+      if (!code) {
+        if (pendingDetectionRef.current) {
+          pendingDetectionRef.current = null;
+          setScannerMessage("Looking for a QR code. Hold it inside the frame.");
+        }
+
+        return;
       }
-    } catch {
+
+      const normalizedValue = code.data.trim();
+
+      if (
+        normalizedValue.length === 0 ||
+        !isDetectionPlausible(code.location, width, height)
+      ) {
+        if (pendingDetectionRef.current) {
+          pendingDetectionRef.current = null;
+          setScannerMessage("Looking for a QR code. Hold it inside the frame.");
+        }
+
+        return;
+      }
+
+      const detectionKey = `${normalizedValue}::${code.version}`;
+      const nextHits =
+        pendingDetectionRef.current?.key === detectionKey
+          ? pendingDetectionRef.current.hits + 1
+          : 1;
+
+      pendingDetectionRef.current = {
+        hits: nextHits,
+        key: detectionKey,
+      };
+
+      if (nextHits < REQUIRED_CONFIRMATION_FRAMES) {
+        setScannerMessage("QR detected. Hold it still for a moment.");
+        return;
+      }
+
+      completeScan(normalizedValue, code.matrix);
+    } catch (error) {
+      pendingDetectionRef.current = null;
+      setScannerStatus("error");
       setScannerMessage(
-        "The camera is live, but this browser couldn't read the QR frame yet.",
+        error instanceof Error
+          ? error.message
+          : "The scanner couldn't decode the camera frame.",
       );
     } finally {
       detectingRef.current = false;
@@ -122,16 +242,13 @@ export function QrScanner({ onScan }: Props) {
   }, [completeScan]);
 
   const beginScan = useCallback(async () => {
-    const BarcodeDetector = getBarcodeDetector();
-
     if (
       typeof navigator === "undefined" ||
-      !navigator.mediaDevices?.getUserMedia ||
-      !BarcodeDetector
+      !navigator.mediaDevices?.getUserMedia
     ) {
       setScannerStatus("unsupported");
       setScannerMessage(
-        "Live QR scanning needs a browser with BarcodeDetector support, like Chrome or Edge.",
+        "Live QR scanning needs camera access in a secure browser context.",
       );
       return;
     }
@@ -149,7 +266,7 @@ export function QrScanner({ onScan }: Props) {
       });
 
       streamRef.current = stream;
-      detectorRef.current = new BarcodeDetector({ formats: ["qr_code"] });
+      pendingDetectionRef.current = null;
 
       const video = videoRef.current;
 
@@ -178,6 +295,12 @@ export function QrScanner({ onScan }: Props) {
       stopCamera();
     };
   }, [stopCamera]);
+
+  useEffect(() => {
+    if (scannerStatus === "idle") {
+      setScannerMessage("Enable your camera and point it at a QR code.");
+    }
+  }, [scannerStatus]);
 
   useEffect(() => {
     if (scannerStatus !== "ready") {
@@ -228,10 +351,10 @@ export function QrScanner({ onScan }: Props) {
             {scannerStatus === "ready" ? (
               <div className="pointer-events-none absolute inset-x-6 bottom-6 rounded-2xl border border-cyan-300/14 bg-slate-950/60 px-4 py-3 text-center backdrop-blur">
                 <p className="text-sm font-medium text-white">
-                  Looking for a QR code
+                  {scannerMessage}
                 </p>
                 <p className="mt-1 text-xs uppercase tracking-[0.2em] text-cyan-200/70">
-                  Hold it inside the frame
+                  Keep the QR centered in the frame
                 </p>
               </div>
             ) : (
@@ -243,16 +366,17 @@ export function QrScanner({ onScan }: Props) {
                   <p className="mt-3 text-sm leading-6 text-slate-300">
                     {scannerMessage}
                   </p>
-                  <button
+                  <Button
                     type="button"
                     onClick={() => void beginScan()}
                     disabled={scannerStatus === "starting"}
-                    className="mt-5 rounded-full border border-cyan-200/20 bg-linear-to-r from-cyan-400 via-emerald-300 to-fuchsia-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-[0_12px_40px_-20px_rgba(34,211,238,0.85)] transition-transform duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                    variant="aurora"
+                    className="mt-5 h-auto px-5 py-2.5 text-sm font-semibold disabled:hover:translate-y-0"
                   >
                     {scannerStatus === "starting"
                       ? "Opening camera..."
                       : "Enable camera"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

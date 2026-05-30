@@ -1,53 +1,125 @@
 export type LifeGrid = boolean[][];
+export type LifeUniverse = Set<string>;
 
-export function countPopulation(grid: LifeGrid): number {
-  let total = 0;
+export type UniverseBounds = {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+};
 
-  for (const row of grid) {
-    for (const cell of row) {
-      if (cell) {
-        total += 1;
+type CellPosition = {
+  x: number;
+  y: number;
+};
+
+function toCellKey(x: number, y: number) {
+  return `${x}:${y}`;
+}
+
+function fromCellKey(key: string): CellPosition {
+  const [xValue = "0", yValue = "0"] = key.split(":");
+
+  return {
+    x: Number(xValue),
+    y: Number(yValue),
+  };
+}
+
+export function createUniverseFromSeed(seed: LifeGrid): LifeUniverse {
+  const rowCount = seed.length;
+  const columnCount = seed[0]?.length ?? 0;
+  const offsetX = -Math.floor(columnCount / 2);
+  const offsetY = -Math.floor(rowCount / 2);
+  const universe = new Set<string>();
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+      if (!seed[rowIndex]?.[columnIndex]) {
+        continue;
+      }
+
+      universe.add(toCellKey(offsetX + columnIndex, offsetY + rowIndex));
+    }
+  }
+
+  return universe;
+}
+
+export function cloneUniverse(universe: LifeUniverse): LifeUniverse {
+  return new Set(universe);
+}
+
+export function countPopulation(universe: LifeUniverse): number {
+  return universe.size;
+}
+
+export function nextGeneration(universe: LifeUniverse): LifeUniverse {
+  const neighborCounts = new Map<string, number>();
+
+  for (const cellKey of universe) {
+    const { x, y } = fromCellKey(cellKey);
+
+    for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
+      for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+        if (rowOffset === 0 && columnOffset === 0) {
+          continue;
+        }
+
+        const neighborKey = toCellKey(x + columnOffset, y + rowOffset);
+        const currentCount = neighborCounts.get(neighborKey) ?? 0;
+
+        neighborCounts.set(neighborKey, currentCount + 1);
       }
     }
   }
 
-  return total;
+  const nextUniverse = new Set<string>();
+
+  for (const [cellKey, neighborCount] of neighborCounts) {
+    const isAlive = universe.has(cellKey);
+
+    if (neighborCount === 3 || (isAlive && neighborCount === 2)) {
+      nextUniverse.add(cellKey);
+    }
+  }
+
+  return nextUniverse;
 }
 
-export function nextGeneration(grid: LifeGrid): LifeGrid {
-  const rowCount = grid.length;
-  const columnCount = grid[0]?.length ?? 0;
+export function getUniverseBounds(
+  universe: LifeUniverse,
+): UniverseBounds | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
 
-  return Array.from({ length: rowCount }, (_, rowIndex) =>
-    Array.from({ length: columnCount }, (_, columnIndex) => {
-      let neighbors = 0;
+  for (const cellKey of universe) {
+    const { x, y } = fromCellKey(cellKey);
 
-      for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
-        for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
-          if (rowOffset === 0 && columnOffset === 0) {
-            continue;
-          }
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
 
-          const nextRow = rowIndex + rowOffset;
-          const nextColumn = columnIndex + columnOffset;
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    return null;
+  }
 
-          if (
-            nextRow >= 0 &&
-            nextRow < rowCount &&
-            nextColumn >= 0 &&
-            nextColumn < columnCount &&
-            grid[nextRow]?.[nextColumn]
-          ) {
-            neighbors += 1;
-          }
-        }
-      }
+  return {
+    maxX,
+    maxY,
+    minX,
+    minY,
+  };
+}
 
-      if (grid[rowIndex]?.[columnIndex]) {
-        return neighbors === 2 || neighbors === 3;
-      }
-
-      return neighbors === 3;
-    }),
-  );
+export function hasLiveCell(
+  universe: LifeUniverse,
+  x: number,
+  y: number,
+): boolean {
+  return universe.has(toCellKey(x, y));
 }

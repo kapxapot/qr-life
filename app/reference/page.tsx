@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: "QR Life Reference",
@@ -164,18 +165,20 @@ export default function ReferencePage() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <button
+              <Button
                 type="button"
-                className="inline-flex items-center justify-center rounded-full border border-cyan-200/20 bg-linear-to-r from-cyan-400 via-emerald-300 to-fuchsia-400 px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_16px_40px_-16px_rgba(34,211,238,0.65)] transition-transform duration-200 hover:-translate-y-0.5"
+                variant="aurora"
+                className="h-auto px-6 py-3 text-sm font-semibold shadow-[0_16px_40px_-16px_rgba(34,211,238,0.65)]"
               >
                 Scan a QR
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="inline-flex items-center justify-center rounded-full border border-white/12 bg-white/5 px-6 py-3 text-sm font-semibold text-white/90 backdrop-blur transition-colors duration-200 hover:bg-white/10"
+                variant="glass"
+                className="h-auto px-6 py-3 text-sm font-semibold backdrop-blur"
               >
                 Preview the evolution
-              </button>
+              </Button>
             </div>
 
             <div className="mt-10 grid gap-4 sm:grid-cols-3">

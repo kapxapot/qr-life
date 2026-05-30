@@ -1,18 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
+  cloneUniverse,
   countPopulation,
+  createUniverseFromSeed,
+  getUniverseBounds,
+  hasLiveCell,
   type LifeGrid,
+  type LifeUniverse,
   nextGeneration,
 } from "@/lib/game-of-life";
 
-const CANVAS_CELL_SIZE = 16;
+const CANVAS_CELL_SIZE = 14;
+const MIN_VIEWPORT_SPAN = 41;
+const VIEWPORT_PADDING = 6;
 
 type Props = {
   onScanAnother: () => void;
   qrValue: string | null;
   seed: LifeGrid;
+};
+
+type Viewport = {
+  minX: number;
+  minY: number;
+  span: number;
 };
 
 function truncateValue(value: string) {
@@ -23,18 +37,56 @@ function truncateValue(value: string) {
   return `${value.slice(0, 84)}...`;
 }
 
-function cloneGrid(grid: LifeGrid): LifeGrid {
-  return grid.map((row) => [...row]);
+function createSeedUniverse(seed: LifeGrid): LifeUniverse {
+  return createUniverseFromSeed(seed);
 }
 
-function drawGrid(canvas: HTMLCanvasElement, grid: LifeGrid) {
-  const rowCount = grid.length;
-  const columnCount = grid[0]?.length ?? 0;
-  const canvasWidth = columnCount * CANVAS_CELL_SIZE;
-  const canvasHeight = rowCount * CANVAS_CELL_SIZE;
+function buildViewport(
+  universe: LifeUniverse,
+  fallbackUniverse: LifeUniverse,
+): Viewport {
+  const boundsSource = universe.size > 0 ? universe : fallbackUniverse;
+  const bounds = getUniverseBounds(boundsSource);
 
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
+  if (!bounds) {
+    return {
+      minX: -Math.floor(MIN_VIEWPORT_SPAN / 2),
+      minY: -Math.floor(MIN_VIEWPORT_SPAN / 2),
+      span: MIN_VIEWPORT_SPAN,
+    };
+  }
+
+  const minX = bounds.minX - VIEWPORT_PADDING;
+  const maxX = bounds.maxX + VIEWPORT_PADDING;
+  const minY = bounds.minY - VIEWPORT_PADDING;
+  const maxY = bounds.maxY + VIEWPORT_PADDING;
+  let span = Math.max(MIN_VIEWPORT_SPAN, maxX - minX + 1, maxY - minY + 1);
+
+  if (span % 2 === 0) {
+    span += 1;
+  }
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const halfSpan = (span - 1) / 2;
+
+  return {
+    minX: Math.floor(centerX - halfSpan),
+    minY: Math.floor(centerY - halfSpan),
+    span,
+  };
+}
+
+function drawUniverse(
+  canvas: HTMLCanvasElement,
+  universe: LifeUniverse,
+  fallbackUniverse: LifeUniverse,
+) {
+  const viewport = buildViewport(universe, fallbackUniverse);
+  const canvasSize = viewport.span * CANVAS_CELL_SIZE;
+
+  canvas.width = canvasSize;
+  canvas.height = canvasSize;
 
   const context = canvas.getContext("2d");
 
@@ -42,14 +94,16 @@ function drawGrid(canvas: HTMLCanvasElement, grid: LifeGrid) {
     return;
   }
 
-  context.clearRect(0, 0, canvasWidth, canvasHeight);
+  context.clearRect(0, 0, canvasSize, canvasSize);
   context.fillStyle = "#030712";
-  context.fillRect(0, 0, canvasWidth, canvasHeight);
+  context.fillRect(0, 0, canvasSize, canvasSize);
 
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+  for (let rowIndex = 0; rowIndex < viewport.span; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < viewport.span; columnIndex += 1) {
       const x = columnIndex * CANVAS_CELL_SIZE;
       const y = rowIndex * CANVAS_CELL_SIZE;
+      const worldX = viewport.minX + columnIndex;
+      const worldY = viewport.minY + rowIndex;
 
       context.fillStyle = "#0f172a";
       context.fillRect(
@@ -59,7 +113,7 @@ function drawGrid(canvas: HTMLCanvasElement, grid: LifeGrid) {
         CANVAS_CELL_SIZE - 2,
       );
 
-      if (!grid[rowIndex]?.[columnIndex]) {
+      if (!hasLiveCell(universe, worldX, worldY)) {
         continue;
       }
 
@@ -86,17 +140,22 @@ function drawGrid(canvas: HTMLCanvasElement, grid: LifeGrid) {
 }
 
 export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
+  const seedUniverse = createSeedUniverse(seed);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simulationTimerRef = useRef<number | null>(null);
-  const initialGridRef = useRef<LifeGrid>(cloneGrid(seed));
-  const gridRef = useRef<LifeGrid>(cloneGrid(seed));
+  const initialUniverseRef = useRef<LifeUniverse>(cloneUniverse(seedUniverse));
+  const universeRef = useRef<LifeUniverse>(cloneUniverse(seedUniverse));
 
-  const [grid, setGrid] = useState<LifeGrid>(() => cloneGrid(seed));
+  const [universe, setUniverse] = useState<LifeUniverse>(() =>
+    cloneUniverse(seedUniverse),
+  );
   const [generation, setGeneration] = useState(0);
-  const [population, setPopulation] = useState(() => countPopulation(seed));
+  const [population, setPopulation] = useState(() =>
+    countPopulation(seedUniverse),
+  );
   const [isRunning, setIsRunning] = useState(false);
   const [statusMessage, setStatusMessage] = useState(
-    "QR captured. This is its first Life state.",
+    "QR captured. It's centered on an endless Life field.",
   );
 
   const stopSimulation = useCallback(() => {
@@ -109,12 +168,11 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   }, []);
 
   const advanceLife = useCallback(() => {
-    const currentGrid = gridRef.current;
-    const nextGrid = nextGeneration(currentGrid);
-    const nextPopulation = countPopulation(nextGrid);
+    const nextUniverse = nextGeneration(universeRef.current);
+    const nextPopulation = countPopulation(nextUniverse);
 
-    gridRef.current = nextGrid;
-    setGrid(nextGrid);
+    universeRef.current = nextUniverse;
+    setUniverse(nextUniverse);
     setGeneration((value) => value + 1);
     setPopulation(nextPopulation);
 
@@ -130,7 +188,7 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
 
       setStatusMessage(
         nextRunningState
-          ? "The colony is evolving."
+          ? "The colony is evolving across the field."
           : "Simulation paused at the current generation.",
       );
 
@@ -141,28 +199,26 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const handleReset = useCallback(() => {
     stopSimulation();
 
-    const nextGrid = cloneGrid(initialGridRef.current);
+    const nextUniverse = cloneUniverse(initialUniverseRef.current);
 
-    gridRef.current = nextGrid;
-    setGrid(nextGrid);
+    universeRef.current = nextUniverse;
+    setUniverse(nextUniverse);
     setGeneration(0);
-    setPopulation(countPopulation(nextGrid));
-    setStatusMessage(
-      "Back to the scanned seed. Start it again whenever you want.",
-    );
+    setPopulation(countPopulation(nextUniverse));
+    setStatusMessage("Back to the centered scanned seed.");
   }, [stopSimulation]);
 
   useEffect(() => {
     stopSimulation();
 
-    const nextGrid = cloneGrid(seed);
+    const nextUniverse = createSeedUniverse(seed);
 
-    initialGridRef.current = cloneGrid(seed);
-    gridRef.current = nextGrid;
-    setGrid(nextGrid);
+    initialUniverseRef.current = cloneUniverse(nextUniverse);
+    universeRef.current = cloneUniverse(nextUniverse);
+    setUniverse(nextUniverse);
     setGeneration(0);
-    setPopulation(countPopulation(nextGrid));
-    setStatusMessage("QR captured. This is its first Life state.");
+    setPopulation(countPopulation(nextUniverse));
+    setStatusMessage("QR captured. It's centered on an endless Life field.");
   }, [seed, stopSimulation]);
 
   useEffect(() => {
@@ -172,8 +228,8 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
       return;
     }
 
-    drawGrid(canvas, grid);
-  }, [grid]);
+    drawUniverse(canvas, universe, initialUniverseRef.current);
+  }, [universe]);
 
   useEffect(() => {
     if (!isRunning) {
@@ -218,27 +274,30 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <button
+              <Button
                 type="button"
                 onClick={handleStart}
-                className="rounded-full border border-cyan-200/20 bg-linear-to-r from-cyan-400 via-emerald-300 to-fuchsia-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-[0_12px_40px_-20px_rgba(34,211,238,0.85)] transition-transform duration-200 hover:-translate-y-0.5"
+                variant="aurora"
+                className="h-auto px-5 py-2.5 text-sm font-semibold"
               >
                 {isRunning ? "Pause" : "Start"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={handleReset}
-                className="rounded-full border border-white/12 bg-white/6 px-5 py-2.5 text-sm font-semibold text-white/90 transition-colors duration-200 hover:bg-white/10"
+                variant="glass"
+                className="h-auto px-5 py-2.5 text-sm font-semibold"
               >
                 Reset
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={onScanAnother}
-                className="rounded-full border border-white/12 bg-transparent px-5 py-2.5 text-sm font-semibold text-slate-300 transition-colors duration-200 hover:border-cyan-200/30 hover:text-white"
+                variant="quiet"
+                className="h-auto px-5 py-2.5 text-sm font-semibold"
               >
                 Scan another QR
-              </button>
+              </Button>
             </div>
           </div>
         </div>
