@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { QrLifeScanner } from "@/components/qr-life-scanner";
+import { MainView } from "@/components/main-view";
 
 export const metadata: Metadata = {
   title: "QR Life",
@@ -27,7 +26,7 @@ export default function Home() {
         </section>
 
         <div className="mt-10">
-          <QrLifeScanner />
+          <MainView />
         </div>
       </div>
     </main>
