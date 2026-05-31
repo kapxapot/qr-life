@@ -106,6 +106,48 @@ function isDetectionPlausible(
   );
 }
 
+function getCameraAccessMessage(error: unknown) {
+  if (error instanceof DOMException) {
+    const normalizedMessage = error.message.toLowerCase();
+
+    if (
+      error.name === "NotAllowedError" ||
+      error.name === "PermissionDeniedError"
+    ) {
+      if (normalizedMessage.includes("dismiss")) {
+        return "Camera permission was dismissed. Please enable camera.";
+      }
+
+      return "Camera access is blocked. Allow it in your browser settings, then try again.";
+    }
+
+    if (
+      error.name === "NotFoundError" ||
+      error.name === "DevicesNotFoundError"
+    ) {
+      return "No camera was found on this device.";
+    }
+
+    if (error.name === "NotReadableError" || error.name === "TrackStartError") {
+      return "The camera is already in use by another app or browser tab.";
+    }
+
+    if (error.name === "SecurityError") {
+      return "Live QR scanning needs camera access in a secure browser context.";
+    }
+  }
+
+  if (error instanceof Error) {
+    const normalizedMessage = error.message.toLowerCase();
+
+    if (normalizedMessage.includes("dismiss")) {
+      return "Camera permission was dismissed. Please enable camera.";
+    }
+  }
+
+  return "Camera access was blocked before scanning started.";
+}
+
 export function QrScanner({ autoStart = false, onScan }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -117,8 +159,7 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
   const [cameraPermissionState, setCameraPermissionState] =
     useState<CameraPermissionState>("checking");
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("idle");
-  const [scannerMessage, setScannerMessage] =
-    useState("Preparing scanner...");
+  const [scannerMessage, setScannerMessage] = useState("Checking camera...");
 
   const stopCamera = useCallback(() => {
     if (scanTimerRef.current) {
@@ -264,7 +305,7 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
 
     stopCamera();
     setScannerStatus("starting");
-    setScannerMessage("Opening your camera...");
+    setScannerMessage("Initializing camera...");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -291,11 +332,7 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
     } catch (error) {
       stopCamera();
       setScannerStatus("error");
-      setScannerMessage(
-        error instanceof Error
-          ? error.message
-          : "Camera access was blocked before scanning started.",
-      );
+      setScannerMessage(getCameraAccessMessage(error));
     }
   }, [stopCamera]);
 
@@ -323,15 +360,10 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
       return;
     }
 
-    if (cameraPermissionState === "granted") {
-      hasAttemptedAutoScanRef.current = true;
-      void beginScan();
-      return;
-    }
-
     if (cameraPermissionState === "denied") {
+      setScannerStatus("error");
       setScannerMessage(
-        "Camera access is blocked. Allow it in your browser settings to scan QR codes.",
+        "Camera access is blocked in your browser for this site. Open the site settings and allow camera access to continue.",
       );
       return;
     }
@@ -342,7 +374,7 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
       return;
     }
 
-    setScannerMessage("Camera access is available. Retry the scanner if needed.");
+    setScannerMessage("Enable your camera and point it at a QR code.");
   }, [autoStart, beginScan, cameraPermissionState, scannerStatus]);
 
   useEffect(() => {
@@ -425,58 +457,57 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
   }, [detectCode, scannerStatus]);
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="rounded-[1.75rem] border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.95),rgba(5,10,20,0.95)] p-4">
-        <div className="relative overflow-hidden rounded-[1.35rem] border border-cyan-300/14 bg-[radial-gradient(circle_at_top,rgba(8,47,73,0.34),transparent_44%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))]">
-          <div className="relative aspect-square">
-            <video
-              ref={videoRef}
-              autoPlay
-              className="h-full w-full object-cover"
-              muted
-              playsInline
-            />
-            <div className="pointer-events-none absolute inset-5 rounded-[1.5rem] border border-dashed border-cyan-200/18" />
-            <div className="pointer-events-none absolute inset-x-[12%] top-1/2 h-px -translate-y-1/2 animate-pulse bg-linear-to-r from-transparent via-cyan-200 to-transparent shadow-[0_0_18px_rgba(103,232,249,0.95)]" />
-            <div className="pointer-events-none absolute left-8 top-8 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-cyan-300/70" />
-            <div className="pointer-events-none absolute right-8 top-8 h-10 w-10 rounded-tr-2xl border-r-2 border-t-2 border-cyan-300/70" />
-            <div className="pointer-events-none absolute bottom-8 left-8 h-10 w-10 rounded-bl-2xl border-b-2 border-l-2 border-cyan-300/70" />
-            <div className="pointer-events-none absolute bottom-8 right-8 h-10 w-10 rounded-br-2xl border-b-2 border-r-2 border-cyan-300/70" />
+    <div className="relative overflow-hidden rounded-[1.35rem] border border-cyan-300/14 bg-[radial-gradient(circle_at_top,rgba(8,47,73,0.34),transparent_44%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))]">
+      <div className="relative aspect-square">
+        <video
+          ref={videoRef}
+          autoPlay
+          className="h-full w-full object-cover"
+          muted
+          playsInline
+        />
+        <div className="pointer-events-none absolute inset-x-[12%] top-1/2 h-px -translate-y-1/2 animate-pulse bg-linear-to-r from-transparent via-cyan-200 to-transparent shadow-[0_0_18px_rgba(103,232,249,0.95)]" />
+        <div className="pointer-events-none absolute left-4 sm:left-6 lg:left-8 top-4 sm:top-6 lg:top-8 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-cyan-300/70" />
+        <div className="pointer-events-none absolute right-4 sm:right-6 lg:right-8 top-4 sm:top-6 lg:top-8 h-10 w-10 rounded-tr-2xl border-r-2 border-t-2 border-cyan-300/70" />
+        <div className="pointer-events-none absolute bottom-4 sm:bottom-6 lg:bottom-8 left-4 sm:left-6 lg:left-8 h-10 w-10 rounded-bl-2xl border-b-2 border-l-2 border-cyan-300/70" />
+        <div className="pointer-events-none absolute bottom-4 sm:bottom-6 lg:bottom-8 right-4 sm:right-6 lg:right-8 h-10 w-10 rounded-br-2xl border-b-2 border-r-2 border-cyan-300/70" />
 
-            {scannerStatus === "ready" ? (
-              <div className="pointer-events-none absolute inset-x-6 bottom-6 rounded-2xl border border-cyan-300/14 bg-slate-950/60 px-4 py-3 text-center backdrop-blur">
-                <p className="text-sm font-medium text-white">
-                  {scannerMessage}
-                </p>
-                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-cyan-200/70">
-                  Keep the QR centered in the frame
-                </p>
-              </div>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-950/78 px-8 text-center">
-                <div className="max-w-sm">
-                  <p className="text-lg font-semibold text-white">
-                    Scan a QR to bring it to life
-                  </p>
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    {scannerMessage}
-                  </p>
+        {scannerStatus === "ready" ? (
+          <div className="pointer-events-none absolute bottom-8 sm:bottom-10 lg:bottom-12 left-1/2 -translate-x-1/2 rounded-2xl border border-cyan-300/14 bg-slate-950/30 px-4 py-3 text-center backdrop-blur w-[80%]">
+            <p className="text-sm font-medium text-white">
+              {scannerMessage}
+            </p>
+            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-cyan-200/70">
+              Keep the QR centered</p>
+          </div>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/78 px-8 text-center">
+            <div className="max-w-sm">
+              <h1 className="mt-6 text-xl font-semibold tracking-tight text-white sm:text-2xl lg:text-3xl">
+                Scan a QR to{" "}
+                <span className="bg-linear-to-r from-cyan-300 via-emerald-300 to-fuchsia-400 bg-clip-text text-transparent">
+                  bring it to life
+                </span>
+              </h1>
+
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                {scannerMessage}
+              </p>
+
+              {scannerStatus !== "starting" && scannerStatus !== "idle" &&
+                cameraPermissionState !== "denied" && (
                   <Button
                     type="button"
                     onClick={() => void beginScan()}
-                    disabled={scannerStatus === "starting"}
                     variant="aurora"
                     className="mt-5 h-auto px-5 py-2.5 text-sm font-semibold disabled:hover:translate-y-0"
                   >
-                    {scannerStatus === "starting"
-                      ? "Opening camera..."
-                      : "Retry scanner"}
+                    Enable camera
                   </Button>
-                </div>
-              </div>
-            )}
+                )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

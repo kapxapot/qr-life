@@ -9,20 +9,22 @@ import {
   countPopulation,
   createUniverseFromSeed,
   getUniverseBounds,
-  hasLiveCell,
   type LifeGrid,
   type LifeUniverse,
   nextGeneration,
 } from "@/lib/game-of-life";
 
 const CANVAS_CELL_SIZE = 14;
+const GRIDLINE_CELL_INSET = 1;
+const LIVE_CELL_INSET = 1.75;
+const INTERIOR_GRIDLINE_WIDTH = GRIDLINE_CELL_INSET * 2;
+const LIVE_CELL_COLOR = "#67e8f9";
 const MIN_VIEWPORT_SPAN = 41;
 const MIN_ZOOMED_VIEWPORT_SPAN = 9;
 const VIEWPORT_PADDING = 6;
 const DEFAULT_ZOOM_FACTOR = 1;
 const DEFAULT_TICK_DELAY_MS = 200;
 const ZOOM_STEP = 1.25;
-const MIN_ZOOM_FACTOR = 0.5;
 const MAX_ZOOM_FACTOR = 3;
 const MIN_TICK_DELAY_MS = 0;
 const MAX_TICK_DELAY_MS = 400;
@@ -45,6 +47,13 @@ type ViewportCenter = {
   y: number;
 };
 
+type InitialGameViewState = {
+  population: number;
+  universe: LifeUniverse;
+  viewportBaseSpan: number;
+  viewportCenter: ViewportCenter;
+};
+
 function truncateValue(value: string) {
   if (value.length <= 84) {
     return value;
@@ -59,6 +68,18 @@ function clampTickDelayMs(value: number) {
 
 function createSeedUniverse(seed: LifeGrid): LifeUniverse {
   return createUniverseFromSeed(seed);
+}
+
+function createInitialGameViewState(seed: LifeGrid): InitialGameViewState {
+  const universe = createSeedUniverse(seed);
+  const viewportCenter = getSeedViewportCenter(seed);
+
+  return {
+    population: countPopulation(universe),
+    universe,
+    viewportBaseSpan: getViewportBaseSpan(universe, universe, viewportCenter),
+    viewportCenter,
+  };
 }
 
 function getSeedViewportCenter(seed: LifeGrid): ViewportCenter {
@@ -87,6 +108,15 @@ function createViewport(center: ViewportCenter, span: number): Viewport {
     minX: Math.floor(center.x - halfSpan),
     minY: Math.floor(center.y - halfSpan),
     span,
+  };
+}
+
+function parseCellKey(key: string): ViewportCenter {
+  const [xValue = "0", yValue = "0"] = key.split(":");
+
+  return {
+    x: Number(xValue),
+    y: Number(yValue),
   };
 }
 
@@ -152,15 +182,23 @@ function drawUniverse(
   zoomFactor: number,
 ) {
   const viewport = buildViewport(viewportBaseSpan, center, zoomFactor);
-  const canvasSize = viewport.span * CANVAS_CELL_SIZE;
-  const displayCellSize =
-    canvas.clientWidth > 0
-      ? canvas.clientWidth / viewport.span
-      : CANVAS_CELL_SIZE;
-  const showGridLines = displayCellSize > 1;
+  const renderedCanvasSize = Math.max(
+    1,
+    Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
+  );
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const displayCellSize = renderedCanvasSize / viewport.span;
+  const displayGridlineWidth =
+    (displayCellSize * INTERIOR_GRIDLINE_WIDTH) / CANVAS_CELL_SIZE;
+  const gridlineInset =
+    (displayCellSize * GRIDLINE_CELL_INSET) / CANVAS_CELL_SIZE;
+  const liveCellInset = (displayCellSize * LIVE_CELL_INSET) / CANVAS_CELL_SIZE;
+  const showGridLines = displayGridlineWidth >= 1;
 
-  canvas.width = canvasSize;
-  canvas.height = canvasSize;
+  // Keep the bitmap matched to the visible canvas so zooming out
+  // doesn't allocate giant off-screen surfaces.
+  canvas.width = Math.round(renderedCanvasSize * devicePixelRatio);
+  canvas.height = Math.round(renderedCanvasSize * devicePixelRatio);
 
   const context = canvas.getContext("2d");
 
@@ -168,79 +206,85 @@ function drawUniverse(
     return;
   }
 
-  context.clearRect(0, 0, canvasSize, canvasSize);
+  context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  context.imageSmoothingEnabled = false;
+  context.clearRect(0, 0, renderedCanvasSize, renderedCanvasSize);
   context.fillStyle = "#030712";
-  context.fillRect(0, 0, canvasSize, canvasSize);
+  context.fillRect(0, 0, renderedCanvasSize, renderedCanvasSize);
 
-  for (let rowIndex = 0; rowIndex < viewport.span; rowIndex += 1) {
-    for (let columnIndex = 0; columnIndex < viewport.span; columnIndex += 1) {
-      const x = columnIndex * CANVAS_CELL_SIZE;
-      const y = rowIndex * CANVAS_CELL_SIZE;
-      const worldX = viewport.minX + columnIndex;
-      const worldY = viewport.minY + rowIndex;
+  if (showGridLines) {
+    context.fillStyle = "#0f172a";
 
-      if (showGridLines) {
-        context.fillStyle = "#0f172a";
+    for (let rowIndex = 0; rowIndex < viewport.span; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < viewport.span; columnIndex += 1) {
+        const x = columnIndex * displayCellSize;
+        const y = rowIndex * displayCellSize;
+
         context.fillRect(
-          x + 1,
-          y + 1,
-          CANVAS_CELL_SIZE - 2,
-          CANVAS_CELL_SIZE - 2,
+          x + gridlineInset,
+          y + gridlineInset,
+          displayCellSize - gridlineInset * 2,
+          displayCellSize - gridlineInset * 2,
         );
       }
-
-      if (!hasLiveCell(universe, worldX, worldY)) {
-        continue;
-      }
-
-      const gradient = context.createLinearGradient(
-        x,
-        y,
-        x + CANVAS_CELL_SIZE,
-        y + CANVAS_CELL_SIZE,
-      );
-
-      gradient.addColorStop(0, "#67e8f9");
-      gradient.addColorStop(0.55, "#6ee7b7");
-      gradient.addColorStop(1, "#f0abfc");
-
-      context.fillStyle = gradient;
-
-      if (showGridLines) {
-        context.fillRect(
-          x + 1.75,
-          y + 1.75,
-          CANVAS_CELL_SIZE - 3.5,
-          CANVAS_CELL_SIZE - 3.5,
-        );
-        continue;
-      }
-
-      context.fillRect(x, y, CANVAS_CELL_SIZE, CANVAS_CELL_SIZE);
     }
+  }
+
+  context.fillStyle = LIVE_CELL_COLOR;
+
+  for (const cellKey of universe) {
+    const { x: worldX, y: worldY } = parseCellKey(cellKey);
+    const columnIndex = worldX - viewport.minX;
+    const rowIndex = worldY - viewport.minY;
+
+    if (
+      columnIndex < 0 ||
+      columnIndex >= viewport.span ||
+      rowIndex < 0 ||
+      rowIndex >= viewport.span
+    ) {
+      continue;
+    }
+
+    const x = columnIndex * displayCellSize;
+    const y = rowIndex * displayCellSize;
+
+    if (showGridLines) {
+      context.fillRect(
+        x + liveCellInset,
+        y + liveCellInset,
+        displayCellSize - liveCellInset * 2,
+        displayCellSize - liveCellInset * 2,
+      );
+      continue;
+    }
+
+    context.fillRect(x, y, displayCellSize, displayCellSize);
   }
 }
 
 export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
-  const seedUniverse = createSeedUniverse(seed);
-  const seedViewportBaseSpan = getViewportBaseSpan(
-    seedUniverse,
-    seedUniverse,
-    getSeedViewportCenter(seed),
-  );
+  const initialGameViewState = createInitialGameViewState(seed);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const simulationTimerRef = useRef<number | null>(null);
-  const initialUniverseRef = useRef<LifeUniverse>(cloneUniverse(seedUniverse));
-  const largestViewportBaseSpanRef = useRef(seedViewportBaseSpan);
-  const universeRef = useRef<LifeUniverse>(cloneUniverse(seedUniverse));
+  const initialGameViewStateRef = useRef(initialGameViewState);
+  const initialUniverseRef = useRef<LifeUniverse>(
+    cloneUniverse(initialGameViewState.universe),
+  );
+  const largestViewportBaseSpanRef = useRef(
+    initialGameViewState.viewportBaseSpan,
+  );
+  const universeRef = useRef<LifeUniverse>(
+    cloneUniverse(initialGameViewState.universe),
+  );
 
   const [universe, setUniverse] = useState<LifeUniverse>(() =>
-    cloneUniverse(seedUniverse),
+    cloneUniverse(initialGameViewState.universe),
   );
   const [generation, setGeneration] = useState(0);
-  const [population, setPopulation] = useState(() =>
-    countPopulation(seedUniverse),
+  const [population, setPopulation] = useState(
+    () => initialGameViewState.population,
   );
   const [copyFeedback, setCopyFeedback] = useState<
     "idle" | "copied" | "failed"
@@ -249,11 +293,9 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const [hasLoadedTickDelayPreference, setHasLoadedTickDelayPreference] =
     useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [isAutoZoomEnabled, setIsAutoZoomEnabled] = useState(true);
   const [tickDelayMs, setTickDelayMs] = useState(DEFAULT_TICK_DELAY_MS);
   const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
-  const [statusMessage, setStatusMessage] = useState(
-    "QR captured. It's centered on an endless Life field.",
-  );
 
   const stopSimulation = useCallback(() => {
     if (simulationTimerRef.current) {
@@ -271,6 +313,40 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
     }
   }, []);
 
+  const restoreInitialGameView = useCallback(
+    (nextInitialGameViewState = initialGameViewStateRef.current) => {
+      const nextUniverse = cloneUniverse(nextInitialGameViewState.universe);
+
+      initialUniverseRef.current = cloneUniverse(
+        nextInitialGameViewState.universe,
+      );
+      largestViewportBaseSpanRef.current =
+        nextInitialGameViewState.viewportBaseSpan;
+      universeRef.current = nextUniverse;
+      setUniverse(nextUniverse);
+      setIsAutoZoomEnabled(true);
+      setZoomFactor(DEFAULT_ZOOM_FACTOR);
+      setGeneration(0);
+      setHasStartedOnce(false);
+      setPopulation(nextInitialGameViewState.population);
+
+      const canvas = canvasRef.current;
+
+      if (!canvas) {
+        return;
+      }
+
+      drawUniverse(
+        canvas,
+        nextUniverse,
+        nextInitialGameViewState.viewportBaseSpan,
+        nextInitialGameViewState.viewportCenter,
+        DEFAULT_ZOOM_FACTOR,
+      );
+    },
+    [],
+  );
+
   const advanceLife = useCallback(() => {
     const nextUniverse = nextGeneration(universeRef.current);
     const nextPopulation = countPopulation(nextUniverse);
@@ -283,7 +359,6 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
     if (nextPopulation === 0) {
       stopSimulation();
       setHasStartedOnce(false);
-      setStatusMessage("The colony faded out. Scan another QR to try again.");
     }
   }, [stopSimulation]);
 
@@ -295,46 +370,25 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
         setHasStartedOnce(true);
       }
 
-      setStatusMessage(
-        nextRunningState
-          ? "The colony is evolving across the field."
-          : "Simulation paused at the current generation.",
-      );
-
       return nextRunningState;
     });
   }, []);
 
   const handleReset = useCallback(() => {
     stopSimulation();
-
-    const nextUniverse = cloneUniverse(initialUniverseRef.current);
-    const nextSeedViewportCenter = getSeedViewportCenter(seed);
-    const nextViewportBaseSpan = getViewportBaseSpan(
-      nextUniverse,
-      nextUniverse,
-      nextSeedViewportCenter,
-    );
-
-    largestViewportBaseSpanRef.current = nextViewportBaseSpan;
-    universeRef.current = nextUniverse;
-    setUniverse(nextUniverse);
-    setGeneration(0);
-    setHasStartedOnce(false);
-    setPopulation(countPopulation(nextUniverse));
-    setStatusMessage("Back to the centered scanned seed.");
-  }, [seed, stopSimulation]);
+    clearCopyFeedbackTimer();
+    setCopyFeedback("idle");
+    restoreInitialGameView();
+  }, [clearCopyFeedbackTimer, restoreInitialGameView, stopSimulation]);
 
   const handleZoomIn = useCallback(() => {
-    setZoomFactor((current) =>
-      Math.min(MAX_ZOOM_FACTOR, Number((current * ZOOM_STEP).toFixed(4))),
-    );
+    setIsAutoZoomEnabled(false);
+    setZoomFactor((current) => Math.min(MAX_ZOOM_FACTOR, current * ZOOM_STEP));
   }, []);
 
   const handleZoomOut = useCallback(() => {
-    setZoomFactor((current) =>
-      Math.max(MIN_ZOOM_FACTOR, Number((current / ZOOM_STEP).toFixed(4))),
-    );
+    setIsAutoZoomEnabled(false);
+    setZoomFactor((current) => current / ZOOM_STEP);
   }, []);
 
   const handleSpeedChange = useCallback(
@@ -406,26 +460,12 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   useEffect(() => {
     stopSimulation();
     clearCopyFeedbackTimer();
+    const nextInitialGameViewState = createInitialGameViewState(seed);
 
-    const nextUniverse = createSeedUniverse(seed);
-    const nextSeedViewportCenter = getSeedViewportCenter(seed);
-    const nextViewportBaseSpan = getViewportBaseSpan(
-      nextUniverse,
-      nextUniverse,
-      nextSeedViewportCenter,
-    );
-
-    initialUniverseRef.current = cloneUniverse(nextUniverse);
-    largestViewportBaseSpanRef.current = nextViewportBaseSpan;
-    universeRef.current = cloneUniverse(nextUniverse);
-    setUniverse(nextUniverse);
-    setGeneration(0);
-    setHasStartedOnce(false);
-    setPopulation(countPopulation(nextUniverse));
+    initialGameViewStateRef.current = nextInitialGameViewState;
     setCopyFeedback("idle");
-    setZoomFactor(DEFAULT_ZOOM_FACTOR);
-    setStatusMessage("QR captured. It's centered on an endless Life field.");
-  }, [clearCopyFeedbackTimer, seed, stopSimulation]);
+    restoreInitialGameView(nextInitialGameViewState);
+  }, [clearCopyFeedbackTimer, restoreInitialGameView, seed, stopSimulation]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -434,17 +474,20 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
       return;
     }
 
-    const nextSeedViewportCenter = getSeedViewportCenter(seed);
+    const nextSeedViewportCenter =
+      initialGameViewStateRef.current.viewportCenter;
     const nextViewportBaseSpan = getViewportBaseSpan(
       universe,
       initialUniverseRef.current,
       nextSeedViewportCenter,
     );
 
-    largestViewportBaseSpanRef.current = Math.max(
-      largestViewportBaseSpanRef.current,
-      nextViewportBaseSpan,
-    );
+    if (isAutoZoomEnabled) {
+      largestViewportBaseSpanRef.current = Math.max(
+        largestViewportBaseSpanRef.current,
+        nextViewportBaseSpan,
+      );
+    }
 
     drawUniverse(
       canvas,
@@ -453,7 +496,7 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
       nextSeedViewportCenter,
       zoomFactor,
     );
-  }, [seed, universe, zoomFactor]);
+  }, [isAutoZoomEnabled, universe, zoomFactor]);
 
   useEffect(() => {
     if (!isRunning) {
@@ -478,7 +521,6 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   }, [clearCopyFeedbackTimer, stopSimulation]);
 
   const isZoomedInAtLimit = zoomFactor >= MAX_ZOOM_FACTOR;
-  const isZoomedOutAtLimit = zoomFactor <= MIN_ZOOM_FACTOR;
   const speedSliderValue = MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - tickDelayMs;
   const copyButtonLabel =
     copyFeedback === "copied"
@@ -502,9 +544,6 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
             <div className="px-1">
               <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/70">
                 Game Of Life
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                {statusMessage}
               </p>
             </div>
 
@@ -538,7 +577,6 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
                   onClick={handleZoomOut}
                   variant="quiet"
                   className="h-9 min-w-9 rounded-full bg-slate-950/72 px-3 text-xl leading-none font-semibold hover:bg-slate-900/82"
-                  disabled={isZoomedOutAtLimit}
                 >
                   -
                 </Button>
