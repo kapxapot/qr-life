@@ -20,12 +20,10 @@ const LIVE_CELL_INSET = 1.75;
 const INTERIOR_GRIDLINE_WIDTH = GRIDLINE_CELL_INSET * 2;
 const LIVE_CELL_COLOR = "#67e8f9";
 const MIN_VIEWPORT_SPAN = 41;
-const MIN_ZOOMED_VIEWPORT_SPAN = 9;
 const VIEWPORT_PADDING = 6;
 const DEFAULT_ZOOM_FACTOR = 1;
 const DEFAULT_TICK_DELAY_MS = 200;
 const ZOOM_STEP = 1.25;
-const MAX_ZOOM_FACTOR = 3;
 const MIN_TICK_DELAY_MS = 0;
 const MAX_TICK_DELAY_MS = 400;
 const TICK_DELAY_STORAGE_KEY = "qr-life:game-of-life:tick-delay-ms";
@@ -163,7 +161,7 @@ function buildViewport(
   zoomFactor: number,
 ): Viewport {
   const span = normalizeViewportSpan(
-    Math.max(MIN_ZOOMED_VIEWPORT_SPAN, baseSpan / zoomFactor),
+    Math.max(1, baseSpan / zoomFactor),
     center,
   );
 
@@ -381,7 +379,7 @@ function GameOfLifeSession({
 
   const handleZoomIn = useCallback(() => {
     setIsAutoZoomEnabled(false);
-    setZoomFactor((current) => Math.min(MAX_ZOOM_FACTOR, current * ZOOM_STEP));
+    setZoomFactor((current) => current * ZOOM_STEP);
   }, []);
 
   const handleZoomOut = useCallback(() => {
@@ -523,7 +521,6 @@ function GameOfLifeSession({
     };
   }, [clearCopyFeedbackTimer, stopSimulation]);
 
-  const isZoomedInAtLimit = zoomFactor >= MAX_ZOOM_FACTOR;
   const speedSliderValue = MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - tickDelayMs;
   const copyButtonLabel =
     copyFeedback === "copied"
@@ -600,7 +597,6 @@ function GameOfLifeSession({
                   onClick={handleZoomIn}
                   variant="quiet"
                   className="size-6 lg:size-8 rounded-full bg-slate-900/82 text-xl lg:text-2xl leading-none font-semibold hover:bg-slate-800/88"
-                  disabled={isZoomedInAtLimit}
                 >
                   +
                 </Button>
@@ -666,7 +662,6 @@ function GameOfLifeSession({
           </div>
         </div>
       </div>
-
     </div>
   );
 }
