@@ -36,6 +36,10 @@ type Props = {
   seed: LifeGrid;
 };
 
+type SessionProps = Props & {
+  onReset: () => void;
+};
+
 type Viewport = {
   minX: number;
   minY: number;
@@ -53,14 +57,6 @@ type InitialGameViewState = {
   viewportBaseSpan: number;
   viewportCenter: ViewportCenter;
 };
-
-function truncateValue(value: string) {
-  if (value.length <= 84) {
-    return value;
-  }
-
-  return `${value.slice(0, 84)}...`;
-}
 
 function clampTickDelayMs(value: number) {
   return Math.min(MAX_TICK_DELAY_MS, Math.max(MIN_TICK_DELAY_MS, value));
@@ -263,7 +259,12 @@ function drawUniverse(
   }
 }
 
-export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
+function GameOfLifeSession({
+  onReset,
+  onScanAnother,
+  qrValue,
+  seed,
+}: SessionProps) {
   const initialGameViewState = createInitialGameViewState(seed);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
@@ -375,11 +376,8 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   }, []);
 
   const handleReset = useCallback(() => {
-    stopSimulation();
-    clearCopyFeedbackTimer();
-    setCopyFeedback("idle");
-    restoreInitialGameView();
-  }, [clearCopyFeedbackTimer, restoreInitialGameView, stopSimulation]);
+    onReset();
+  }, [onReset]);
 
   const handleZoomIn = useCallback(() => {
     setIsAutoZoomEnabled(false);
@@ -389,6 +387,11 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const handleZoomOut = useCallback(() => {
     setIsAutoZoomEnabled(false);
     setZoomFactor((current) => current / ZOOM_STEP);
+  }, []);
+
+  const handleFit = useCallback(() => {
+    setZoomFactor(DEFAULT_ZOOM_FACTOR);
+    setIsAutoZoomEnabled(true);
   }, []);
 
   const handleSpeedChange = useCallback(
@@ -537,46 +540,58 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
       : "Start";
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-      <div className="space-y-4">
-        <div className="rounded-[1.75rem] border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.95),rgba(5,10,20,0.95)] p-4">
-          <div className="space-y-4">
-            <div className="px-1">
-              <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/70">
-                Game Of Life
-              </p>
+    <div className="space-y-4">
+      <div className="rounded-[1.75rem] border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.95),rgba(5,10,20,0.95)] p-4">
+        <div className="space-y-4">
+          <div className="relative overflow-hidden border border-cyan-300/14 bg-[#020617] p-1">
+            <canvas ref={canvasRef} className="aspect-square w-full" />
+
+            <div className="absolute top-2 sm:top-4 lg:top-6 left-2 sm:left-4 lg:left-6 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
+              <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
+                Gen
+              </span>
+              <span className="font-mono text-sm text-white sm:text-base lg:text-lg">
+                {generation}
+              </span>
             </div>
 
-            <div className="relative overflow-hidden rounded-[1.35rem] border border-cyan-300/14 bg-[#020617] p-3">
-              <canvas
-                ref={canvasRef}
-                className="aspect-square w-full rounded-2xl"
-              />
+            <div className="absolute top-2 sm:top-4 lg:top-6 right-2 sm:right-4 lg:right-6 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
+              <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
+                Cells
+              </span>
+              <span className="font-mono text-sm text-cyan-200 sm:text-base lg:text-lg">
+                {population}
+              </span>
+            </div>
 
-              <div className="absolute bottom-6 left-6 rounded-full bg-slate-950/72 px-3 py-2 backdrop-blur">
-                <label className="flex items-center gap-3">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-200/80">
-                    Speed
-                  </span>
-                  <input
-                    type="range"
-                    min={MIN_TICK_DELAY_MS}
-                    max={MAX_TICK_DELAY_MS}
-                    step={20}
-                    value={speedSliderValue}
-                    onChange={handleSpeedChange}
-                    className="h-1.5 w-28 cursor-pointer accent-cyan-300"
-                    aria-label="Simulation speed"
-                  />
-                </label>
-              </div>
+            <div className="absolute bottom-2 sm:bottom-4 lg:bottom-6 left-2 sm:left-4 lg:left-6 rounded-xl border border-white/12 sm:rounded-full bg-slate-950 p-1.5 pb-3 sm:pl-3 sm:pr-2.5 lg:pr-3 sm:py-2 lg:py-3">
+              <label className="flex flex-col items-center gap-2 sm:flex-row">
+                <span className="text-[0.6rem] sm:text-xs lg:text-sm font-medium uppercase tracking-[0.24em] text-slate-200/80">
+                  Speed
+                </span>
+                <input
+                  type="range"
+                  min={MIN_TICK_DELAY_MS}
+                  max={MAX_TICK_DELAY_MS}
+                  step={20}
+                  value={speedSliderValue}
+                  onChange={handleSpeedChange}
+                  className="h-1.5 w-20 sm:w-28 cursor-pointer accent-cyan-300"
+                  aria-label="Simulation speed"
+                />
+              </label>
+            </div>
 
-              <div className="absolute right-6 bottom-6 inline-flex items-center gap-2">
+            <div className="absolute right-2 sm:right-4 lg:right-6 bottom-2 sm:bottom-4 lg:bottom-6 flex flex-col items-center gap-1 rounded-xl border border-white/12 bg-slate-950 p-1.5 sm:flex-row sm:gap-2 sm:rounded-full sm:pl-3 sm:pr-1.5 lg:pr-2 sm:py-1 lg:py-1.5">
+              <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
+                Zoom
+              </span>
+              <div className="inline-flex items-center gap-1">
                 <Button
                   type="button"
                   onClick={handleZoomOut}
                   variant="quiet"
-                  className="h-9 min-w-9 rounded-full bg-slate-950/72 px-3 text-xl leading-none font-semibold hover:bg-slate-900/82"
+                  className="size-6 lg:size-8 rounded-full bg-slate-900/82 text-xl lg:text-2xl leading-none font-semibold hover:bg-slate-800/88"
                 >
                   -
                 </Button>
@@ -584,89 +599,90 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
                   type="button"
                   onClick={handleZoomIn}
                   variant="quiet"
-                  className="h-9 min-w-9 rounded-full bg-slate-950/72 px-3 text-xl leading-none font-semibold hover:bg-slate-900/82"
+                  className="size-6 lg:size-8 rounded-full bg-slate-900/82 text-xl lg:text-2xl leading-none font-semibold hover:bg-slate-800/88"
                   disabled={isZoomedInAtLimit}
                 >
                   +
                 </Button>
+                <Button
+                  type="button"
+                  onClick={handleFit}
+                  variant="quiet"
+                  aria-pressed={isAutoZoomEnabled}
+                  className="size-6 lg:size-8 rounded-full bg-slate-900/82 text-[0.5rem] lg:text-xs leading-none font-semibold uppercase tracking-[0.08em] text-slate-200/80 hover:bg-slate-800/88"
+                >
+                  Fit
+                </Button>
               </div>
             </div>
+          </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Button
-                type="button"
-                onClick={handleStart}
-                variant="aurora"
-                className="h-auto px-5 py-2.5 text-sm font-semibold"
-              >
-                {startButtonLabel}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleReset}
-                variant="glass"
-                className="h-auto px-5 py-2.5 text-sm font-semibold"
-              >
-                Reset
-              </Button>
-              <Button
-                type="button"
-                onClick={onScanAnother}
-                variant="quiet"
-                className="h-auto px-5 py-2.5 text-sm font-semibold"
-              >
-                Scan another QR
-              </Button>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              onClick={handleStart}
+              variant="aurora"
+              className="h-auto px-5 py-2.5 text-sm font-semibold"
+            >
+              {startButtonLabel}
+            </Button>
+
+            <Button
+              type="button"
+              onClick={handleReset}
+              variant="glass"
+              className="h-auto px-5 py-2.5 text-sm font-semibold"
+            >
+              Reset
+            </Button>
+
+            <Button
+              type="button"
+              onClick={onScanAnother}
+              variant="quiet"
+              className="h-auto px-5 py-2.5 text-sm font-semibold"
+            >
+              New
+            </Button>
+
+            <div className="relative rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 min-w-40 max-w-80 flex-1">
+              <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
+                {qrValue ?? "No QR captured yet."}
+              </p>
+              <div className="absolute inset-y-0 right-2 flex items-center">
+                <Button
+                  type="button"
+                  onClick={handleCopyQrValue}
+                  variant="quiet"
+                  className="h-8 min-w-8 rounded-full bg-slate-900/88 px-0 text-slate-200 hover:bg-slate-800"
+                  disabled={!qrValue}
+                  aria-label={copyButtonLabel}
+                  title={copyButtonLabel}
+                >
+                  <CopyButtonIcon className="size-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <aside className="space-y-4">
-        <div className="rounded-[1.75rem] border border-white/10 bg-white/4 p-5">
-          <p className="text-xs uppercase tracking-[0.28em] text-fuchsia-200/70">
-            Status
-          </p>
-          <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <div className="rounded-2xl border border-white/10 bg-white/4 px-4 py-3">
-              <dt className="text-sm text-slate-400">Iteration</dt>
-              <dd className="mt-1 font-mono text-2xl text-white">
-                {generation}
-              </dd>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/4 px-4 py-3">
-              <dt className="text-sm text-slate-400">Population</dt>
-              <dd className="mt-1 font-mono text-2xl text-cyan-200">
-                {population}
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="rounded-[1.75rem] border border-white/10 bg-white/4 p-5">
-          <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/70">
-            Decoded Value
-          </p>
-          <div className="relative mt-4 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3">
-            <p className="pr-12 font-mono text-xs leading-6 text-slate-300">
-              {qrValue ? truncateValue(qrValue) : "No QR captured yet."}
-            </p>
-            <div className="absolute inset-y-0 right-3 flex items-center">
-              <Button
-                type="button"
-                onClick={handleCopyQrValue}
-                variant="quiet"
-                className="h-8 min-w-8 rounded-full bg-slate-900/88 px-0 text-slate-200 hover:bg-slate-800"
-                disabled={!qrValue}
-                aria-label={copyButtonLabel}
-                title={copyButtonLabel}
-              >
-                <CopyButtonIcon className="size-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </aside>
     </div>
+  );
+}
+
+export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
+  const [sessionKey, setSessionKey] = useState(0);
+
+  return (
+    <GameOfLifeSession
+      key={sessionKey}
+      onReset={() => {
+        setSessionKey((current) => current + 1);
+      }}
+      onScanAnother={onScanAnother}
+      qrValue={qrValue}
+      seed={seed}
+    />
   );
 }

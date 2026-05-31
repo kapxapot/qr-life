@@ -4,7 +4,6 @@ import { useState } from "react";
 import { GameOfLife } from "@/components/game-of-life";
 import { QrScanner } from "@/components/qr-scanner";
 import type { LifeGrid } from "@/lib/game-of-life";
-import { cn } from "@/lib/utils";
 
 type ScanResult = {
   qrValue: string | null;
@@ -16,12 +15,7 @@ export function MainView() {
   const [shouldAutoStartScanner, setShouldAutoStartScanner] = useState(false);
 
   return (
-    <section
-      className={cn(
-        "rounded-[2rem] shadow-[0_0_15px_0_rgba(34,211,238,0.45)]",
-        !scanResult && "w-[95vmin] sm:w-[80vmin] md:w-[50vmin]",
-      )}
-    >
+    <section className="w-[95vmin] rounded-[2rem] shadow-[0_0_15px_0_rgba(34,211,238,0.45)] sm:w-[80vmin]">
       {scanResult ? (
         <GameOfLife
           onScanAnother={() => {
