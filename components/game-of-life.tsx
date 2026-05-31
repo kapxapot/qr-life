@@ -20,12 +20,13 @@ const MIN_VIEWPORT_SPAN = 41;
 const MIN_ZOOMED_VIEWPORT_SPAN = 9;
 const VIEWPORT_PADDING = 6;
 const DEFAULT_ZOOM_FACTOR = 1;
-const DEFAULT_TICK_DELAY_MS = 180;
+const DEFAULT_TICK_DELAY_MS = 200;
 const ZOOM_STEP = 1.25;
 const MIN_ZOOM_FACTOR = 0.5;
 const MAX_ZOOM_FACTOR = 3;
-const MIN_TICK_DELAY_MS = 60;
-const MAX_TICK_DELAY_MS = 420;
+const MIN_TICK_DELAY_MS = 0;
+const MAX_TICK_DELAY_MS = 400;
+const TICK_DELAY_STORAGE_KEY = "qr-life:game-of-life:tick-delay-ms";
 
 type Props = {
   onScanAnother: () => void;
@@ -52,6 +53,10 @@ function truncateValue(value: string) {
   return `${value.slice(0, 84)}...`;
 }
 
+function clampTickDelayMs(value: number) {
+  return Math.min(MAX_TICK_DELAY_MS, Math.max(MIN_TICK_DELAY_MS, value));
+}
+
 function createSeedUniverse(seed: LifeGrid): LifeUniverse {
   return createUniverseFromSeed(seed);
 }
@@ -75,10 +80,7 @@ function getSeedViewportCenter(seed: LifeGrid): ViewportCenter {
   };
 }
 
-function createViewport(
-  center: ViewportCenter,
-  span: number,
-): Viewport {
+function createViewport(center: ViewportCenter, span: number): Viewport {
   const halfSpan = (span - 1) / 2;
 
   return {
@@ -88,10 +90,7 @@ function createViewport(
   };
 }
 
-function normalizeViewportSpan(
-  span: number,
-  center: ViewportCenter,
-): number {
+function normalizeViewportSpan(span: number, center: ViewportCenter): number {
   let nextSpan = Math.max(1, Math.ceil(span));
   const shouldUseOddSpan =
     Number.isInteger(center.x) && Number.isInteger(center.y);
@@ -127,10 +126,7 @@ function getViewportBaseSpan(
   );
 
   return normalizeViewportSpan(
-    Math.max(
-      MIN_VIEWPORT_SPAN,
-      Math.ceil(furthestEdgeDistance * 2 + 1),
-    ),
+    Math.max(MIN_VIEWPORT_SPAN, Math.ceil(furthestEdgeDistance * 2 + 1)),
     center,
   );
 }
@@ -158,7 +154,9 @@ function drawUniverse(
   const viewport = buildViewport(viewportBaseSpan, center, zoomFactor);
   const canvasSize = viewport.span * CANVAS_CELL_SIZE;
   const displayCellSize =
-    canvas.clientWidth > 0 ? canvas.clientWidth / viewport.span : CANVAS_CELL_SIZE;
+    canvas.clientWidth > 0
+      ? canvas.clientWidth / viewport.span
+      : CANVAS_CELL_SIZE;
   const showGridLines = displayCellSize > 1;
 
   canvas.width = canvasSize;
@@ -244,10 +242,12 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const [population, setPopulation] = useState(() =>
     countPopulation(seedUniverse),
   );
-  const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  );
+  const [copyFeedback, setCopyFeedback] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
   const [hasStartedOnce, setHasStartedOnce] = useState(false);
+  const [hasLoadedTickDelayPreference, setHasLoadedTickDelayPreference] =
+    useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [tickDelayMs, setTickDelayMs] = useState(DEFAULT_TICK_DELAY_MS);
   const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
@@ -340,8 +340,9 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const handleSpeedChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const nextSliderValue = Number(event.target.value);
-      const nextTickDelayMs =
-        MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - nextSliderValue;
+      const nextTickDelayMs = clampTickDelayMs(
+        MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - nextSliderValue,
+      );
 
       setTickDelayMs(nextTickDelayMs);
     },
@@ -369,6 +370,40 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   }, [clearCopyFeedbackTimer, qrValue]);
 
   useEffect(() => {
+    let nextTickDelayMs = DEFAULT_TICK_DELAY_MS;
+
+    try {
+      const storedTickDelayMs = window.localStorage.getItem(
+        TICK_DELAY_STORAGE_KEY,
+      );
+
+      if (storedTickDelayMs !== null) {
+        const parsedTickDelayMs = Number(storedTickDelayMs);
+
+        if (Number.isFinite(parsedTickDelayMs)) {
+          nextTickDelayMs = clampTickDelayMs(parsedTickDelayMs);
+        }
+      }
+    } catch {}
+
+    setTickDelayMs(nextTickDelayMs);
+    setHasLoadedTickDelayPreference(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedTickDelayPreference) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        TICK_DELAY_STORAGE_KEY,
+        String(clampTickDelayMs(tickDelayMs)),
+      );
+    } catch {}
+  }, [hasLoadedTickDelayPreference, tickDelayMs]);
+
+  useEffect(() => {
     stopSimulation();
     clearCopyFeedbackTimer();
 
@@ -388,7 +423,6 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
     setHasStartedOnce(false);
     setPopulation(countPopulation(nextUniverse));
     setCopyFeedback("idle");
-    setTickDelayMs(DEFAULT_TICK_DELAY_MS);
     setZoomFactor(DEFAULT_ZOOM_FACTOR);
     setStatusMessage("QR captured. It's centered on an endless Life field.");
   }, [clearCopyFeedbackTimer, seed, stopSimulation]);
@@ -445,8 +479,7 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
 
   const isZoomedInAtLimit = zoomFactor >= MAX_ZOOM_FACTOR;
   const isZoomedOutAtLimit = zoomFactor <= MIN_ZOOM_FACTOR;
-  const speedSliderValue =
-    MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - tickDelayMs;
+  const speedSliderValue = MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - tickDelayMs;
   const copyButtonLabel =
     copyFeedback === "copied"
       ? "Copied"
