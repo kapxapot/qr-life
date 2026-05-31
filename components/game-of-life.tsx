@@ -1,5 +1,7 @@
 "use client";
 
+import { RiCheckLine, RiFileCopyLine } from "@remixicon/react";
+import type { ChangeEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +17,15 @@ import {
 
 const CANVAS_CELL_SIZE = 14;
 const MIN_VIEWPORT_SPAN = 41;
+const MIN_ZOOMED_VIEWPORT_SPAN = 9;
 const VIEWPORT_PADDING = 6;
+const DEFAULT_ZOOM_FACTOR = 1;
+const DEFAULT_TICK_DELAY_MS = 180;
+const ZOOM_STEP = 1.25;
+const MIN_ZOOM_FACTOR = 0.5;
+const MAX_ZOOM_FACTOR = 3;
+const MIN_TICK_DELAY_MS = 60;
+const MAX_TICK_DELAY_MS = 420;
 
 type Props = {
   onScanAnother: () => void;
@@ -27,6 +37,11 @@ type Viewport = {
   minX: number;
   minY: number;
   span: number;
+};
+
+type ViewportCenter = {
+  x: number;
+  y: number;
 };
 
 function truncateValue(value: string) {
@@ -41,49 +56,110 @@ function createSeedUniverse(seed: LifeGrid): LifeUniverse {
   return createUniverseFromSeed(seed);
 }
 
-function buildViewport(
+function getSeedViewportCenter(seed: LifeGrid): ViewportCenter {
+  const rowCount = seed.length;
+  const columnCount = seed[0]?.length ?? 0;
+
+  if (rowCount === 0 || columnCount === 0) {
+    return { x: 0, y: 0 };
+  }
+
+  const minX = -Math.floor(columnCount / 2);
+  const maxX = minX + columnCount - 1;
+  const minY = -Math.floor(rowCount / 2);
+  const maxY = minY + rowCount - 1;
+
+  return {
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
+  };
+}
+
+function createViewport(
+  center: ViewportCenter,
+  span: number,
+): Viewport {
+  const halfSpan = (span - 1) / 2;
+
+  return {
+    minX: Math.floor(center.x - halfSpan),
+    minY: Math.floor(center.y - halfSpan),
+    span,
+  };
+}
+
+function normalizeViewportSpan(
+  span: number,
+  center: ViewportCenter,
+): number {
+  let nextSpan = Math.max(1, Math.ceil(span));
+  const shouldUseOddSpan =
+    Number.isInteger(center.x) && Number.isInteger(center.y);
+
+  if ((nextSpan % 2 === 1) !== shouldUseOddSpan) {
+    nextSpan += 1;
+  }
+
+  return nextSpan;
+}
+
+function getViewportBaseSpan(
   universe: LifeUniverse,
   fallbackUniverse: LifeUniverse,
-): Viewport {
+  center: ViewportCenter,
+): number {
   const boundsSource = universe.size > 0 ? universe : fallbackUniverse;
   const bounds = getUniverseBounds(boundsSource);
 
   if (!bounds) {
-    return {
-      minX: -Math.floor(MIN_VIEWPORT_SPAN / 2),
-      minY: -Math.floor(MIN_VIEWPORT_SPAN / 2),
-      span: MIN_VIEWPORT_SPAN,
-    };
+    return normalizeViewportSpan(MIN_VIEWPORT_SPAN, center);
   }
 
   const minX = bounds.minX - VIEWPORT_PADDING;
   const maxX = bounds.maxX + VIEWPORT_PADDING;
   const minY = bounds.minY - VIEWPORT_PADDING;
   const maxY = bounds.maxY + VIEWPORT_PADDING;
-  let span = Math.max(MIN_VIEWPORT_SPAN, maxX - minX + 1, maxY - minY + 1);
+  const furthestEdgeDistance = Math.max(
+    Math.abs(center.x - minX),
+    Math.abs(maxX - center.x),
+    Math.abs(center.y - minY),
+    Math.abs(maxY - center.y),
+  );
 
-  if (span % 2 === 0) {
-    span += 1;
-  }
+  return normalizeViewportSpan(
+    Math.max(
+      MIN_VIEWPORT_SPAN,
+      Math.ceil(furthestEdgeDistance * 2 + 1),
+    ),
+    center,
+  );
+}
 
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  const halfSpan = (span - 1) / 2;
+function buildViewport(
+  baseSpan: number,
+  center: ViewportCenter,
+  zoomFactor: number,
+): Viewport {
+  const span = normalizeViewportSpan(
+    Math.max(MIN_ZOOMED_VIEWPORT_SPAN, baseSpan / zoomFactor),
+    center,
+  );
 
-  return {
-    minX: Math.floor(centerX - halfSpan),
-    minY: Math.floor(centerY - halfSpan),
-    span,
-  };
+  return createViewport(center, span);
 }
 
 function drawUniverse(
   canvas: HTMLCanvasElement,
   universe: LifeUniverse,
-  fallbackUniverse: LifeUniverse,
+  viewportBaseSpan: number,
+  center: ViewportCenter,
+  zoomFactor: number,
 ) {
-  const viewport = buildViewport(universe, fallbackUniverse);
+  const viewport = buildViewport(viewportBaseSpan, center, zoomFactor);
   const canvasSize = viewport.span * CANVAS_CELL_SIZE;
+  const displayCellSize =
+    canvas.clientWidth > 0 ? canvas.clientWidth / viewport.span : CANVAS_CELL_SIZE;
+  const showGridLines = displayCellSize > 1;
 
   canvas.width = canvasSize;
   canvas.height = canvasSize;
@@ -105,13 +181,15 @@ function drawUniverse(
       const worldX = viewport.minX + columnIndex;
       const worldY = viewport.minY + rowIndex;
 
-      context.fillStyle = "#0f172a";
-      context.fillRect(
-        x + 1,
-        y + 1,
-        CANVAS_CELL_SIZE - 2,
-        CANVAS_CELL_SIZE - 2,
-      );
+      if (showGridLines) {
+        context.fillStyle = "#0f172a";
+        context.fillRect(
+          x + 1,
+          y + 1,
+          CANVAS_CELL_SIZE - 2,
+          CANVAS_CELL_SIZE - 2,
+        );
+      }
 
       if (!hasLiveCell(universe, worldX, worldY)) {
         continue;
@@ -129,21 +207,34 @@ function drawUniverse(
       gradient.addColorStop(1, "#f0abfc");
 
       context.fillStyle = gradient;
-      context.fillRect(
-        x + 1.75,
-        y + 1.75,
-        CANVAS_CELL_SIZE - 3.5,
-        CANVAS_CELL_SIZE - 3.5,
-      );
+
+      if (showGridLines) {
+        context.fillRect(
+          x + 1.75,
+          y + 1.75,
+          CANVAS_CELL_SIZE - 3.5,
+          CANVAS_CELL_SIZE - 3.5,
+        );
+        continue;
+      }
+
+      context.fillRect(x, y, CANVAS_CELL_SIZE, CANVAS_CELL_SIZE);
     }
   }
 }
 
 export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const seedUniverse = createSeedUniverse(seed);
+  const seedViewportBaseSpan = getViewportBaseSpan(
+    seedUniverse,
+    seedUniverse,
+    getSeedViewportCenter(seed),
+  );
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const copyFeedbackTimerRef = useRef<number | null>(null);
   const simulationTimerRef = useRef<number | null>(null);
   const initialUniverseRef = useRef<LifeUniverse>(cloneUniverse(seedUniverse));
+  const largestViewportBaseSpanRef = useRef(seedViewportBaseSpan);
   const universeRef = useRef<LifeUniverse>(cloneUniverse(seedUniverse));
 
   const [universe, setUniverse] = useState<LifeUniverse>(() =>
@@ -153,7 +244,13 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const [population, setPopulation] = useState(() =>
     countPopulation(seedUniverse),
   );
+  const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const [hasStartedOnce, setHasStartedOnce] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [tickDelayMs, setTickDelayMs] = useState(DEFAULT_TICK_DELAY_MS);
+  const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
   const [statusMessage, setStatusMessage] = useState(
     "QR captured. It's centered on an endless Life field.",
   );
@@ -167,6 +264,13 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
     setIsRunning(false);
   }, []);
 
+  const clearCopyFeedbackTimer = useCallback(() => {
+    if (copyFeedbackTimerRef.current) {
+      window.clearTimeout(copyFeedbackTimerRef.current);
+      copyFeedbackTimerRef.current = null;
+    }
+  }, []);
+
   const advanceLife = useCallback(() => {
     const nextUniverse = nextGeneration(universeRef.current);
     const nextPopulation = countPopulation(nextUniverse);
@@ -178,6 +282,7 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
 
     if (nextPopulation === 0) {
       stopSimulation();
+      setHasStartedOnce(false);
       setStatusMessage("The colony faded out. Scan another QR to try again.");
     }
   }, [stopSimulation]);
@@ -185,6 +290,10 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
   const handleStart = useCallback(() => {
     setIsRunning((current) => {
       const nextRunningState = !current;
+
+      if (nextRunningState) {
+        setHasStartedOnce(true);
+      }
 
       setStatusMessage(
         nextRunningState
@@ -200,26 +309,89 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
     stopSimulation();
 
     const nextUniverse = cloneUniverse(initialUniverseRef.current);
+    const nextSeedViewportCenter = getSeedViewportCenter(seed);
+    const nextViewportBaseSpan = getViewportBaseSpan(
+      nextUniverse,
+      nextUniverse,
+      nextSeedViewportCenter,
+    );
 
+    largestViewportBaseSpanRef.current = nextViewportBaseSpan;
     universeRef.current = nextUniverse;
     setUniverse(nextUniverse);
     setGeneration(0);
+    setHasStartedOnce(false);
     setPopulation(countPopulation(nextUniverse));
     setStatusMessage("Back to the centered scanned seed.");
-  }, [stopSimulation]);
+  }, [seed, stopSimulation]);
+
+  const handleZoomIn = useCallback(() => {
+    setZoomFactor((current) =>
+      Math.min(MAX_ZOOM_FACTOR, Number((current * ZOOM_STEP).toFixed(4))),
+    );
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoomFactor((current) =>
+      Math.max(MIN_ZOOM_FACTOR, Number((current / ZOOM_STEP).toFixed(4))),
+    );
+  }, []);
+
+  const handleSpeedChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const nextSliderValue = Number(event.target.value);
+      const nextTickDelayMs =
+        MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - nextSliderValue;
+
+      setTickDelayMs(nextTickDelayMs);
+    },
+    [],
+  );
+
+  const handleCopyQrValue = useCallback(async () => {
+    if (!qrValue) {
+      return;
+    }
+
+    clearCopyFeedbackTimer();
+
+    try {
+      await navigator.clipboard.writeText(qrValue);
+      setCopyFeedback("copied");
+    } catch {
+      setCopyFeedback("failed");
+    }
+
+    copyFeedbackTimerRef.current = window.setTimeout(() => {
+      setCopyFeedback("idle");
+      copyFeedbackTimerRef.current = null;
+    }, 1800);
+  }, [clearCopyFeedbackTimer, qrValue]);
 
   useEffect(() => {
     stopSimulation();
+    clearCopyFeedbackTimer();
 
     const nextUniverse = createSeedUniverse(seed);
+    const nextSeedViewportCenter = getSeedViewportCenter(seed);
+    const nextViewportBaseSpan = getViewportBaseSpan(
+      nextUniverse,
+      nextUniverse,
+      nextSeedViewportCenter,
+    );
 
     initialUniverseRef.current = cloneUniverse(nextUniverse);
+    largestViewportBaseSpanRef.current = nextViewportBaseSpan;
     universeRef.current = cloneUniverse(nextUniverse);
     setUniverse(nextUniverse);
     setGeneration(0);
+    setHasStartedOnce(false);
     setPopulation(countPopulation(nextUniverse));
+    setCopyFeedback("idle");
+    setTickDelayMs(DEFAULT_TICK_DELAY_MS);
+    setZoomFactor(DEFAULT_ZOOM_FACTOR);
     setStatusMessage("QR captured. It's centered on an endless Life field.");
-  }, [seed, stopSimulation]);
+  }, [clearCopyFeedbackTimer, seed, stopSimulation]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -228,15 +400,33 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
       return;
     }
 
-    drawUniverse(canvas, universe, initialUniverseRef.current);
-  }, [universe]);
+    const nextSeedViewportCenter = getSeedViewportCenter(seed);
+    const nextViewportBaseSpan = getViewportBaseSpan(
+      universe,
+      initialUniverseRef.current,
+      nextSeedViewportCenter,
+    );
+
+    largestViewportBaseSpanRef.current = Math.max(
+      largestViewportBaseSpanRef.current,
+      nextViewportBaseSpan,
+    );
+
+    drawUniverse(
+      canvas,
+      universe,
+      largestViewportBaseSpanRef.current,
+      nextSeedViewportCenter,
+      zoomFactor,
+    );
+  }, [seed, universe, zoomFactor]);
 
   useEffect(() => {
     if (!isRunning) {
       return;
     }
 
-    simulationTimerRef.current = window.setInterval(advanceLife, 180);
+    simulationTimerRef.current = window.setInterval(advanceLife, tickDelayMs);
 
     return () => {
       if (simulationTimerRef.current) {
@@ -244,13 +434,32 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
         simulationTimerRef.current = null;
       }
     };
-  }, [advanceLife, isRunning]);
+  }, [advanceLife, isRunning, tickDelayMs]);
 
   useEffect(() => {
     return () => {
+      clearCopyFeedbackTimer();
       stopSimulation();
     };
-  }, [stopSimulation]);
+  }, [clearCopyFeedbackTimer, stopSimulation]);
+
+  const isZoomedInAtLimit = zoomFactor >= MAX_ZOOM_FACTOR;
+  const isZoomedOutAtLimit = zoomFactor <= MIN_ZOOM_FACTOR;
+  const speedSliderValue =
+    MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - tickDelayMs;
+  const copyButtonLabel =
+    copyFeedback === "copied"
+      ? "Copied"
+      : copyFeedback === "failed"
+        ? "Retry"
+        : "Copy";
+  const CopyButtonIcon =
+    copyFeedback === "copied" ? RiCheckLine : RiFileCopyLine;
+  const startButtonLabel = isRunning
+    ? "Pause"
+    : hasStartedOnce
+      ? "Resume"
+      : "Start";
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -266,11 +475,50 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
               </p>
             </div>
 
-            <div className="overflow-hidden rounded-[1.35rem] border border-cyan-300/14 bg-[#020617] p-3">
+            <div className="relative overflow-hidden rounded-[1.35rem] border border-cyan-300/14 bg-[#020617] p-3">
               <canvas
                 ref={canvasRef}
                 className="aspect-square w-full rounded-2xl"
               />
+
+              <div className="absolute bottom-6 left-6 rounded-full bg-slate-950/72 px-3 py-2 backdrop-blur">
+                <label className="flex items-center gap-3">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-200/80">
+                    Speed
+                  </span>
+                  <input
+                    type="range"
+                    min={MIN_TICK_DELAY_MS}
+                    max={MAX_TICK_DELAY_MS}
+                    step={20}
+                    value={speedSliderValue}
+                    onChange={handleSpeedChange}
+                    className="h-1.5 w-28 cursor-pointer accent-cyan-300"
+                    aria-label="Simulation speed"
+                  />
+                </label>
+              </div>
+
+              <div className="absolute right-6 bottom-6 inline-flex items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={handleZoomOut}
+                  variant="quiet"
+                  className="h-9 min-w-9 rounded-full bg-slate-950/72 px-3 text-xl leading-none font-semibold hover:bg-slate-900/82"
+                  disabled={isZoomedOutAtLimit}
+                >
+                  -
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleZoomIn}
+                  variant="quiet"
+                  className="h-9 min-w-9 rounded-full bg-slate-950/72 px-3 text-xl leading-none font-semibold hover:bg-slate-900/82"
+                  disabled={isZoomedInAtLimit}
+                >
+                  +
+                </Button>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -280,7 +528,7 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
                 variant="aurora"
                 className="h-auto px-5 py-2.5 text-sm font-semibold"
               >
-                {isRunning ? "Pause" : "Start"}
+                {startButtonLabel}
               </Button>
               <Button
                 type="button"
@@ -328,9 +576,24 @@ export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
           <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/70">
             Decoded Value
           </p>
-          <p className="mt-4 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 font-mono text-xs leading-6 text-slate-300">
-            {qrValue ? truncateValue(qrValue) : "No QR captured yet."}
-          </p>
+          <div className="relative mt-4 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3">
+            <p className="pr-12 font-mono text-xs leading-6 text-slate-300">
+              {qrValue ? truncateValue(qrValue) : "No QR captured yet."}
+            </p>
+            <div className="absolute inset-y-0 right-3 flex items-center">
+              <Button
+                type="button"
+                onClick={handleCopyQrValue}
+                variant="quiet"
+                className="h-8 min-w-8 rounded-full bg-slate-900/88 px-0 text-slate-200 hover:bg-slate-800"
+                disabled={!qrValue}
+                aria-label={copyButtonLabel}
+                title={copyButtonLabel}
+              >
+                <CopyButtonIcon className="size-4" />
+              </Button>
+            </div>
+          </div>
         </div>
       </aside>
     </div>

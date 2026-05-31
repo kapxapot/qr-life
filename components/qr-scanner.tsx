@@ -7,10 +7,17 @@ import { type JsQrBitMatrix, type JsQrLocation, jsQr } from "@/lib/jsqr";
 import { createSeedFromQrMatrix } from "@/lib/qr-seed";
 
 type ScannerStatus = "idle" | "starting" | "ready" | "unsupported" | "error";
+type CameraPermissionState =
+  | PermissionState
+  | "checking"
+  | "unknown"
+  | "unsupported";
+type CameraPermissionDescriptor = PermissionDescriptor & { name: "camera" };
 
 const REQUIRED_CONFIRMATION_FRAMES = 3;
 
 type Props = {
+  autoStart?: boolean;
   onScan: (seed: LifeGrid, qrValue: string | null) => void;
 };
 
@@ -99,17 +106,19 @@ function isDetectionPlausible(
   );
 }
 
-export function QrScanner({ onScan }: Props) {
+export function QrScanner({ autoStart = false, onScan }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const detectingRef = useRef(false);
+  const hasAttemptedAutoScanRef = useRef(false);
   const pendingDetectionRef = useRef<PendingDetection | null>(null);
+  const [cameraPermissionState, setCameraPermissionState] =
+    useState<CameraPermissionState>("checking");
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("idle");
-  const [scannerMessage, setScannerMessage] = useState(
-    "Enable your camera and point it at a QR code.",
-  );
+  const [scannerMessage, setScannerMessage] =
+    useState("Preparing scanner...");
 
   const stopCamera = useCallback(() => {
     if (scanTimerRef.current) {
@@ -297,10 +306,96 @@ export function QrScanner({ onScan }: Props) {
   }, [stopCamera]);
 
   useEffect(() => {
-    if (scannerStatus === "idle") {
-      setScannerMessage("Enable your camera and point it at a QR code.");
+    if (scannerStatus !== "idle") {
+      return;
     }
-  }, [scannerStatus]);
+
+    if (cameraPermissionState === "checking") {
+      setScannerMessage("Preparing scanner...");
+      return;
+    }
+
+    if (cameraPermissionState === "unsupported") {
+      setScannerStatus("unsupported");
+      setScannerMessage(
+        "Live QR scanning needs camera access in a secure browser context.",
+      );
+      return;
+    }
+
+    if (cameraPermissionState === "granted") {
+      hasAttemptedAutoScanRef.current = true;
+      void beginScan();
+      return;
+    }
+
+    if (cameraPermissionState === "denied") {
+      setScannerMessage(
+        "Camera access is blocked. Allow it in your browser settings to scan QR codes.",
+      );
+      return;
+    }
+
+    if (autoStart || !hasAttemptedAutoScanRef.current) {
+      hasAttemptedAutoScanRef.current = true;
+      void beginScan();
+      return;
+    }
+
+    setScannerMessage("Camera access is available. Retry the scanner if needed.");
+  }, [autoStart, beginScan, cameraPermissionState, scannerStatus]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined") {
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraPermissionState("unsupported");
+      return;
+    }
+
+    if (!navigator.permissions?.query) {
+      setCameraPermissionState("unknown");
+      return;
+    }
+
+    let isCancelled = false;
+    let permissionStatus: PermissionStatus | null = null;
+
+    const syncPermissionState = () => {
+      if (isCancelled || !permissionStatus) {
+        return;
+      }
+
+      setCameraPermissionState(permissionStatus.state);
+    };
+
+    void navigator.permissions
+      .query({ name: "camera" } as CameraPermissionDescriptor)
+      .then((nextPermissionStatus) => {
+        if (isCancelled) {
+          return;
+        }
+
+        permissionStatus = nextPermissionStatus;
+        syncPermissionState();
+        permissionStatus.onchange = syncPermissionState;
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setCameraPermissionState("unknown");
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (scannerStatus !== "ready") {
@@ -375,7 +470,7 @@ export function QrScanner({ onScan }: Props) {
                   >
                     {scannerStatus === "starting"
                       ? "Opening camera..."
-                      : "Enable camera"}
+                      : "Retry scanner"}
                   </Button>
                 </div>
               </div>
