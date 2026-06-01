@@ -474,11 +474,10 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
 
         {scannerStatus === "ready" ? (
           <div className="pointer-events-none absolute bottom-8 sm:bottom-10 lg:bottom-12 left-1/2 -translate-x-1/2 rounded-2xl border border-cyan-300/14 bg-slate-950/30 px-4 py-3 text-center backdrop-blur w-[80%]">
-            <p className="text-sm font-medium text-white">
-              {scannerMessage}
-            </p>
+            <p className="text-sm font-medium text-white">{scannerMessage}</p>
             <p className="mt-1 text-xs uppercase tracking-[0.2em] text-cyan-200/70">
-              Keep the QR centered</p>
+              Keep the QR centered
+            </p>
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-950/78 px-8 text-center">
@@ -494,7 +493,8 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
                 {scannerMessage}
               </p>
 
-              {scannerStatus !== "starting" && scannerStatus !== "idle" &&
+              {scannerStatus !== "starting" &&
+                scannerStatus !== "idle" &&
                 cameraPermissionState !== "denied" && (
                   <Button
                     type="button"

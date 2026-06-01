@@ -543,7 +543,7 @@ function GameOfLifeSession({
           <div className="relative overflow-hidden border border-cyan-300/14 bg-[#020617] p-1">
             <canvas ref={canvasRef} className="aspect-square w-full" />
 
-            <div className="absolute top-2 sm:top-4 lg:top-6 left-2 sm:left-4 lg:left-6 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
+            <div className="absolute top-2 sm:top-4 left-2 sm:left-4 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
               <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
                 Gen
               </span>
@@ -552,7 +552,7 @@ function GameOfLifeSession({
               </span>
             </div>
 
-            <div className="absolute top-2 sm:top-4 lg:top-6 right-2 sm:right-4 lg:right-6 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
+            <div className="absolute top-2 sm:top-4 right-2 sm:right-4 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
               <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
                 Cells
               </span>
@@ -561,7 +561,7 @@ function GameOfLifeSession({
               </span>
             </div>
 
-            <div className="absolute bottom-2 sm:bottom-4 lg:bottom-6 left-2 sm:left-4 lg:left-6 rounded-xl border border-white/12 sm:rounded-full bg-slate-950 p-1.5 pb-3 sm:pl-3 sm:pr-2.5 lg:pr-3 sm:py-2 lg:py-3">
+            <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 rounded-xl border border-white/12 sm:rounded-full bg-slate-950 p-1.5 pb-3 sm:pl-3 sm:pr-2.5 lg:pr-3 sm:py-2 lg:py-3">
               <label className="flex flex-col items-center gap-2 sm:flex-row">
                 <span className="text-[0.6rem] sm:text-xs lg:text-sm font-medium uppercase tracking-[0.24em] text-slate-200/80">
                   Speed
@@ -579,7 +579,7 @@ function GameOfLifeSession({
               </label>
             </div>
 
-            <div className="absolute right-2 sm:right-4 lg:right-6 bottom-2 sm:bottom-4 lg:bottom-6 flex flex-col items-center gap-1 rounded-xl border border-white/12 bg-slate-950 p-1.5 sm:flex-row sm:gap-2 sm:rounded-full sm:pl-3 sm:pr-1.5 lg:pr-2 sm:py-1 lg:py-1.5">
+            <div className="absolute right-2 sm:right-4 bottom-2 sm:bottom-4 flex flex-col items-center gap-1 rounded-xl border border-white/12 bg-slate-950 p-1.5 sm:flex-row sm:gap-2 sm:rounded-full sm:pl-3 sm:pr-1.5 lg:pr-2 sm:py-1 lg:py-1.5">
               <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
                 Zoom
               </span>
