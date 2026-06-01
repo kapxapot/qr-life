@@ -1,6 +1,6 @@
 "use client";
 
-import { RiCheckLine, RiFileCopyLine } from "@remixicon/react";
+import { RiCheckLine, RiFileCopyLine, RiShareLine } from "@remixicon/react";
 import type { ChangeEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -266,6 +266,7 @@ function GameOfLifeSession({
   const initialGameViewState = createInitialGameViewState(seed);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
+  const shareFeedbackTimerRef = useRef<number | null>(null);
   const simulationTimerRef = useRef<number | null>(null);
   const initialGameViewStateRef = useRef(initialGameViewState);
   const initialUniverseRef = useRef<LifeUniverse>(
@@ -288,6 +289,9 @@ function GameOfLifeSession({
   const [copyFeedback, setCopyFeedback] = useState<
     "idle" | "copied" | "failed"
   >("idle");
+  const [shareFeedback, setShareFeedback] = useState<
+    "idle" | "shared" | "copied" | "failed"
+  >("idle");
   const [hasStartedOnce, setHasStartedOnce] = useState(false);
   const [hasLoadedTickDelayPreference, setHasLoadedTickDelayPreference] =
     useState(false);
@@ -309,6 +313,13 @@ function GameOfLifeSession({
     if (copyFeedbackTimerRef.current) {
       window.clearTimeout(copyFeedbackTimerRef.current);
       copyFeedbackTimerRef.current = null;
+    }
+  }, []);
+
+  const clearShareFeedbackTimer = useCallback(() => {
+    if (shareFeedbackTimerRef.current) {
+      window.clearTimeout(shareFeedbackTimerRef.current);
+      shareFeedbackTimerRef.current = null;
     }
   }, []);
 
@@ -424,6 +435,40 @@ function GameOfLifeSession({
     }, 1800);
   }, [clearCopyFeedbackTimer, qrValue]);
 
+  const handleShareCurrentUrl = useCallback(async () => {
+    if (typeof window === "undefined" || typeof navigator === "undefined") {
+      return;
+    }
+
+    clearShareFeedbackTimer();
+
+    try {
+      const currentUrl = window.location.href;
+
+      if (typeof navigator.share === "function") {
+        await navigator.share({ url: currentUrl });
+        setShareFeedback("shared");
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(currentUrl);
+        setShareFeedback("copied");
+      } else {
+        setShareFeedback("failed");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setShareFeedback("idle");
+        return;
+      }
+
+      setShareFeedback("failed");
+    }
+
+    shareFeedbackTimerRef.current = window.setTimeout(() => {
+      setShareFeedback("idle");
+      shareFeedbackTimerRef.current = null;
+    }, 1800);
+  }, [clearShareFeedbackTimer]);
+
   useEffect(() => {
     let nextTickDelayMs = DEFAULT_TICK_DELAY_MS;
 
@@ -461,12 +506,20 @@ function GameOfLifeSession({
   useEffect(() => {
     stopSimulation();
     clearCopyFeedbackTimer();
+    clearShareFeedbackTimer();
     const nextInitialGameViewState = createInitialGameViewState(seed);
 
     initialGameViewStateRef.current = nextInitialGameViewState;
     setCopyFeedback("idle");
+    setShareFeedback("idle");
     restoreInitialGameView(nextInitialGameViewState);
-  }, [clearCopyFeedbackTimer, restoreInitialGameView, seed, stopSimulation]);
+  }, [
+    clearCopyFeedbackTimer,
+    clearShareFeedbackTimer,
+    restoreInitialGameView,
+    seed,
+    stopSimulation,
+  ]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -517,9 +570,10 @@ function GameOfLifeSession({
   useEffect(() => {
     return () => {
       clearCopyFeedbackTimer();
+      clearShareFeedbackTimer();
       stopSimulation();
     };
-  }, [clearCopyFeedbackTimer, stopSimulation]);
+  }, [clearCopyFeedbackTimer, clearShareFeedbackTimer, stopSimulation]);
 
   const speedSliderValue = MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - tickDelayMs;
   const copyButtonLabel =
@@ -530,6 +584,24 @@ function GameOfLifeSession({
         : "Copy";
   const CopyButtonIcon =
     copyFeedback === "copied" ? RiCheckLine : RiFileCopyLine;
+  const canShareCurrentUrl =
+    typeof navigator !== "undefined" &&
+    (typeof navigator.share === "function" ||
+      typeof navigator.clipboard?.writeText === "function");
+  const shareButtonLabel =
+    shareFeedback === "shared"
+      ? "Shared"
+      : shareFeedback === "copied"
+        ? "Link copied"
+        : shareFeedback === "failed"
+          ? "Retry"
+          : canShareCurrentUrl
+            ? "Share"
+            : "Sharing unavailable";
+  const ShareButtonIcon =
+    shareFeedback === "shared" || shareFeedback === "copied"
+      ? RiCheckLine
+      : RiShareLine;
   const startButtonLabel = isRunning
     ? "Pause"
     : hasStartedOnce
@@ -641,7 +713,7 @@ function GameOfLifeSession({
               New
             </Button>
 
-            <div className="relative rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 min-w-40 max-w-80 flex-1">
+            <div className="relative min-w-40 max-w-80 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5">
               <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
                 {qrValue ?? "No QR captured yet."}
               </p>
@@ -659,6 +731,18 @@ function GameOfLifeSession({
                 </Button>
               </div>
             </div>
+
+            <Button
+              type="button"
+              onClick={handleShareCurrentUrl}
+              variant="quiet"
+              className="size-11 shrink-0 rounded-full border-white/10 bg-slate-950/70 text-slate-200 hover:bg-slate-900/88"
+              disabled={!canShareCurrentUrl}
+              aria-label={shareButtonLabel}
+              title={shareButtonLabel}
+            >
+              <ShareButtonIcon className="size-4" />
+            </Button>
           </div>
         </div>
       </div>
