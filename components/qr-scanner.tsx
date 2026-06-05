@@ -234,9 +234,7 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
       context.drawImage(video, 0, 0, width, height);
 
       const imageData = context.getImageData(0, 0, width, height);
-      const code = jsQr(imageData.data, width, height, {
-        inversionAttempts: "dontInvert",
-      });
+      const code = jsQr(imageData.data, width, height);
 
       if (!code) {
         if (pendingDetectionRef.current) {
