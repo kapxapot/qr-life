@@ -22,17 +22,12 @@ type CameraPermissionState =
   | "unsupported";
 type CameraPermissionDescriptor = PermissionDescriptor & { name: "camera" };
 
-const REQUIRED_CONFIRMATION_FRAMES = 3;
+const REQUIRED_CONFIRMATION_FRAMES = 1;
 
 type Props = {
   autoStart?: boolean;
   debug?: boolean;
   onScan: (seed: LifeGrid, qrValue: string | null) => void;
-};
-
-type PendingDetection = {
-  hits: number;
-  key: string;
 };
 
 export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
@@ -42,7 +37,6 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
   const scanTimerRef = useRef<number | null>(null);
   const detectingRef = useRef(false);
   const hasAttemptedAutoScanRef = useRef(false);
-  const pendingDetectionRef = useRef<PendingDetection | null>(null);
   const [cameraPermissionState, setCameraPermissionState] =
     useState<CameraPermissionState>("checking");
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("idle");
@@ -62,7 +56,6 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
     }
 
     streamRef.current = null;
-    pendingDetectionRef.current = null;
 
     if (videoRef.current) {
       videoRef.current.srcObject = null;
@@ -153,11 +146,6 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
           });
         }
 
-        if (pendingDetectionRef.current) {
-          pendingDetectionRef.current = null;
-          setScannerMessage("Looking for a QR code. Hold it inside the frame.");
-        }
-
         return;
       }
 
@@ -190,48 +178,12 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
           });
         }
 
-        if (pendingDetectionRef.current) {
-          pendingDetectionRef.current = null;
-          setScannerMessage("Looking for a QR code. Hold it inside the frame.");
-        }
-
-        return;
-      }
-
-      const detectionKey = `${normalizedValue}::${code.version}`;
-      const nextHits =
-        pendingDetectionRef.current?.key === detectionKey
-          ? pendingDetectionRef.current.hits + 1
-          : 1;
-
-      pendingDetectionRef.current = {
-        hits: nextHits,
-        key: detectionKey,
-      };
-
-      if (nextHits < REQUIRED_CONFIRMATION_FRAMES) {
-        if (debug) {
-          setDebugSnapshot({
-            confirmationHits: nextHits,
-            frameHeight: height,
-            frameWidth: width,
-            invertedLocationCount: diagnostics?.invertedLocationCount ?? 0,
-            locationCount: diagnostics?.locationCount ?? 0,
-            normalizedValueLength: normalizedValue.length,
-            plausibility,
-            rejectionReason: `The same QR must decode ${REQUIRED_CONFIRMATION_FRAMES} times in a row before the app accepts it.`,
-            stage: "pending-confirmation",
-            version: code.version,
-          });
-        }
-
-        setScannerMessage("QR detected. Hold it still for a moment.");
         return;
       }
 
       if (debug) {
         setDebugSnapshot({
-          confirmationHits: nextHits,
+          confirmationHits: REQUIRED_CONFIRMATION_FRAMES,
           frameHeight: height,
           frameWidth: width,
           invertedLocationCount: diagnostics?.invertedLocationCount ?? 0,
@@ -246,7 +198,6 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
 
       completeScan(normalizedValue, code.matrix);
     } catch (error) {
-      pendingDetectionRef.current = null;
       setScannerStatus("error");
       setScannerMessage(
         error instanceof Error
@@ -284,7 +235,6 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
       });
 
       streamRef.current = stream;
-      pendingDetectionRef.current = null;
 
       const video = videoRef.current;
 

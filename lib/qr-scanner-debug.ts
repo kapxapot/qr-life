@@ -24,7 +24,6 @@ export type ScannerDebugStage =
   | "located-but-undecodable"
   | "decoded-empty"
   | "decoded-but-rejected"
-  | "pending-confirmation"
   | "scan-complete";
 
 export type ScannerDebugSnapshot = {
@@ -45,7 +44,6 @@ const DEBUG_STAGE_LABELS = {
   "decoded-empty": "Decoded empty payload",
   "located-but-undecodable": "Locate passed, decode failed",
   "no-qr-located": "Locate failed",
-  "pending-confirmation": "Awaiting frame confirmation",
   "scan-complete": "Scan complete",
   "waiting-for-frame": "Waiting for frame",
 } satisfies Record<ScannerDebugStage, string>;
