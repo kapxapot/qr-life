@@ -22,4 +22,8 @@ Do not use broad or repo-wide restore/reset/revert commands.
 
 Before running any revert or restore command, list the exact target files first and keep the operation limited to that list.
 
+## JSX conditional rendering rule
+
+For boolean JSX conditions, prefer `condition && <Component />` over `condition ? <Component /> : null`.
+
 <!-- END:nextjs-agent-rules -->

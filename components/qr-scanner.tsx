@@ -1,12 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { QrScannerDebugPanel } from "@/components/qr-scanner-debug-panel";
 import { Button } from "@/components/ui/button";
 import type { LifeGrid } from "@/lib/game-of-life";
-import { type JsQrBitMatrix, type JsQrLocation, jsQr } from "@/lib/jsqr";
+import { type JsQrBitMatrix, jsQr } from "@/lib/jsqr";
+import { getCameraAccessMessage, type ScannerStatus } from "@/lib/qr-scanner";
+import {
+  createInitialDebugSnapshot,
+  getDetectionPlausibility,
+  getPlausibilityRejectionReason,
+  getQrLocationDiagnostics,
+  type ScannerDebugSnapshot,
+} from "@/lib/qr-scanner-debug";
 import { createSeedFromQrMatrix } from "@/lib/qr-seed";
 
-type ScannerStatus = "idle" | "starting" | "ready" | "unsupported" | "error";
 type CameraPermissionState =
   | PermissionState
   | "checking"
@@ -18,6 +26,7 @@ const REQUIRED_CONFIRMATION_FRAMES = 3;
 
 type Props = {
   autoStart?: boolean;
+  debug?: boolean;
   onScan: (seed: LifeGrid, qrValue: string | null) => void;
 };
 
@@ -26,129 +35,7 @@ type PendingDetection = {
   key: string;
 };
 
-function getPointDistance(
-  firstPoint: { x: number; y: number },
-  secondPoint: { x: number; y: number },
-) {
-  return Math.hypot(secondPoint.x - firstPoint.x, secondPoint.y - firstPoint.y);
-}
-
-function isDetectionPlausible(
-  location: JsQrLocation,
-  width: number,
-  height: number,
-) {
-  const points = [
-    location.topLeftCorner,
-    location.topRightCorner,
-    location.bottomRightCorner,
-    location.bottomLeftCorner,
-  ];
-
-  if (
-    points.some(
-      ({ x, y }) =>
-        !Number.isFinite(x) ||
-        !Number.isFinite(y) ||
-        x < 0 ||
-        y < 0 ||
-        x > width ||
-        y > height,
-    )
-  ) {
-    return false;
-  }
-
-  const topWidth = getPointDistance(
-    location.topLeftCorner,
-    location.topRightCorner,
-  );
-  const bottomWidth = getPointDistance(
-    location.bottomLeftCorner,
-    location.bottomRightCorner,
-  );
-  const leftHeight = getPointDistance(
-    location.topLeftCorner,
-    location.bottomLeftCorner,
-  );
-  const rightHeight = getPointDistance(
-    location.topRightCorner,
-    location.bottomRightCorner,
-  );
-  const averageWidth = (topWidth + bottomWidth) / 2;
-  const averageHeight = (leftHeight + rightHeight) / 2;
-  const frameArea = width * height;
-  const qrAreaRatio = (averageWidth * averageHeight) / Math.max(frameArea, 1);
-  const aspectRatio = averageWidth / Math.max(averageHeight, 1);
-  const centerX =
-    (location.topLeftCorner.x +
-      location.topRightCorner.x +
-      location.bottomLeftCorner.x +
-      location.bottomRightCorner.x) /
-    4;
-  const centerY =
-    (location.topLeftCorner.y +
-      location.topRightCorner.y +
-      location.bottomLeftCorner.y +
-      location.bottomRightCorner.y) /
-    4;
-  const isCentered =
-    centerX >= width * 0.15 &&
-    centerX <= width * 0.85 &&
-    centerY >= height * 0.15 &&
-    centerY <= height * 0.85;
-
-  return (
-    qrAreaRatio >= 0.01 &&
-    aspectRatio >= 0.55 &&
-    aspectRatio <= 1.8 &&
-    isCentered
-  );
-}
-
-function getCameraAccessMessage(error: unknown) {
-  if (error instanceof DOMException) {
-    const normalizedMessage = error.message.toLowerCase();
-
-    if (
-      error.name === "NotAllowedError" ||
-      error.name === "PermissionDeniedError"
-    ) {
-      if (normalizedMessage.includes("dismiss")) {
-        return "Camera permission was dismissed. Please enable camera.";
-      }
-
-      return "Camera access is blocked. Allow it in your browser settings, then try again.";
-    }
-
-    if (
-      error.name === "NotFoundError" ||
-      error.name === "DevicesNotFoundError"
-    ) {
-      return "No camera was found on this device.";
-    }
-
-    if (error.name === "NotReadableError" || error.name === "TrackStartError") {
-      return "The camera is already in use by another app or browser tab.";
-    }
-
-    if (error.name === "SecurityError") {
-      return "Live QR scanning needs camera access in a secure browser context.";
-    }
-  }
-
-  if (error instanceof Error) {
-    const normalizedMessage = error.message.toLowerCase();
-
-    if (normalizedMessage.includes("dismiss")) {
-      return "Camera permission was dismissed. Please enable camera.";
-    }
-  }
-
-  return "Camera access was blocked before scanning started.";
-}
-
-export function QrScanner({ autoStart = false, onScan }: Props) {
+export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -160,6 +47,9 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
     useState<CameraPermissionState>("checking");
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("idle");
   const [scannerMessage, setScannerMessage] = useState("Checking camera...");
+  const [debugSnapshot, setDebugSnapshot] = useState<ScannerDebugSnapshot>(
+    createInitialDebugSnapshot,
+  );
 
   const stopCamera = useCallback(() => {
     if (scanTimerRef.current) {
@@ -234,9 +124,35 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
       context.drawImage(video, 0, 0, width, height);
 
       const imageData = context.getImageData(0, 0, width, height);
+      const diagnostics = debug
+        ? getQrLocationDiagnostics(imageData.data, width, height)
+        : null;
       const code = jsQr(imageData.data, width, height);
 
       if (!code) {
+        if (debug) {
+          const hasLocatedQr = Boolean(
+            diagnostics &&
+              (diagnostics.locationCount > 0 ||
+                diagnostics.invertedLocationCount > 0),
+          );
+
+          setDebugSnapshot({
+            confirmationHits: 0,
+            frameHeight: height,
+            frameWidth: width,
+            invertedLocationCount: diagnostics?.invertedLocationCount ?? 0,
+            locationCount: diagnostics?.locationCount ?? 0,
+            normalizedValueLength: null,
+            plausibility: null,
+            rejectionReason: hasLocatedQr
+              ? "Finder patterns were detected, but the payload could not be decoded from this frame."
+              : "No plausible finder pattern was located in this frame.",
+            stage: hasLocatedQr ? "located-but-undecodable" : "no-qr-located",
+            version: null,
+          });
+        }
+
         if (pendingDetectionRef.current) {
           pendingDetectionRef.current = null;
           setScannerMessage("Looking for a QR code. Hold it inside the frame.");
@@ -246,11 +162,34 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
       }
 
       const normalizedValue = code.data.trim();
+      const plausibility = getDetectionPlausibility(
+        code.location,
+        width,
+        height,
+      );
 
-      if (
-        normalizedValue.length === 0 ||
-        !isDetectionPlausible(code.location, width, height)
-      ) {
+      if (normalizedValue.length === 0 || !plausibility.isValid) {
+        if (debug) {
+          setDebugSnapshot({
+            confirmationHits: 0,
+            frameHeight: height,
+            frameWidth: width,
+            invertedLocationCount: diagnostics?.invertedLocationCount ?? 0,
+            locationCount: diagnostics?.locationCount ?? 0,
+            normalizedValueLength: normalizedValue.length,
+            plausibility,
+            rejectionReason:
+              normalizedValue.length === 0
+                ? "The QR decoder returned an empty string."
+                : getPlausibilityRejectionReason(plausibility),
+            stage:
+              normalizedValue.length === 0
+                ? "decoded-empty"
+                : "decoded-but-rejected",
+            version: code.version,
+          });
+        }
+
         if (pendingDetectionRef.current) {
           pendingDetectionRef.current = null;
           setScannerMessage("Looking for a QR code. Hold it inside the frame.");
@@ -271,8 +210,38 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
       };
 
       if (nextHits < REQUIRED_CONFIRMATION_FRAMES) {
+        if (debug) {
+          setDebugSnapshot({
+            confirmationHits: nextHits,
+            frameHeight: height,
+            frameWidth: width,
+            invertedLocationCount: diagnostics?.invertedLocationCount ?? 0,
+            locationCount: diagnostics?.locationCount ?? 0,
+            normalizedValueLength: normalizedValue.length,
+            plausibility,
+            rejectionReason: `The same QR must decode ${REQUIRED_CONFIRMATION_FRAMES} times in a row before the app accepts it.`,
+            stage: "pending-confirmation",
+            version: code.version,
+          });
+        }
+
         setScannerMessage("QR detected. Hold it still for a moment.");
         return;
+      }
+
+      if (debug) {
+        setDebugSnapshot({
+          confirmationHits: nextHits,
+          frameHeight: height,
+          frameWidth: width,
+          invertedLocationCount: diagnostics?.invertedLocationCount ?? 0,
+          locationCount: diagnostics?.locationCount ?? 0,
+          normalizedValueLength: normalizedValue.length,
+          plausibility,
+          rejectionReason: null,
+          stage: "scan-complete",
+          version: code.version,
+        });
       }
 
       completeScan(normalizedValue, code.matrix);
@@ -287,7 +256,7 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
     } finally {
       detectingRef.current = false;
     }
-  }, [completeScan]);
+  }, [completeScan, debug]);
 
   const beginScan = useCallback(async () => {
     if (
@@ -304,6 +273,7 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
     stopCamera();
     setScannerStatus("starting");
     setScannerMessage("Initializing camera...");
+    setDebugSnapshot(createInitialDebugSnapshot());
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -464,6 +434,14 @@ export function QrScanner({ autoStart = false, onScan }: Props) {
           muted
           playsInline
         />
+        {debug && (
+          <QrScannerDebugPanel
+            confirmationFrameTarget={REQUIRED_CONFIRMATION_FRAMES}
+            debugSnapshot={debugSnapshot}
+            scannerMessage={scannerMessage}
+            scannerStatus={scannerStatus}
+          />
+        )}
         <div className="pointer-events-none absolute inset-x-[12%] top-1/2 h-px -translate-y-1/2 animate-pulse bg-linear-to-r from-transparent via-cyan-200 to-transparent shadow-[0_0_18px_rgba(103,232,249,0.95)]" />
         <div className="pointer-events-none absolute left-4 sm:left-6 lg:left-8 top-4 sm:top-6 lg:top-8 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-cyan-300/70" />
         <div className="pointer-events-none absolute right-4 sm:right-6 lg:right-8 top-4 sm:top-6 lg:top-8 h-10 w-10 rounded-tr-2xl border-r-2 border-t-2 border-cyan-300/70" />

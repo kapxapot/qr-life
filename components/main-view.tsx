@@ -90,6 +90,7 @@ export function MainView() {
   const [invalidShareMessage, setInvalidShareMessage] = useState<string | null>(
     null,
   );
+  const [scannerDebugEnabled, setScannerDebugEnabled] = useState(false);
   const [hasResolvedInitialShareLink, setHasResolvedInitialShareLink] =
     useState(false);
 
@@ -100,6 +101,9 @@ export function MainView() {
     }
 
     const nextSharedScan = parseSharedScanFromSearch(window.location.search);
+    const debugMode = new URLSearchParams(window.location.search).get("debug");
+
+    setScannerDebugEnabled(debugMode === "1" || debugMode === "qr");
 
     if (nextSharedScan.scanResult) {
       setScanResult(nextSharedScan.scanResult);
@@ -153,6 +157,7 @@ export function MainView() {
       ) : (
         <QrScanner
           autoStart={shouldAutoStartScanner}
+          debug={scannerDebugEnabled}
           onScan={(seed, qrValue) => {
             setShouldAutoStartScanner(false);
             setScanResult({
