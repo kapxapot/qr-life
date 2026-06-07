@@ -22,13 +22,19 @@ const GRID_INSET_END_RATIO = 1.6;
 const MIN_VISIBLE_LIVE_CELL_GAP_DEVICE_PIXELS = 2;
 const LIVE_CELL_COLOR = "#67e8f9";
 const MIN_VIEWPORT_SPAN = 41;
-const VIEWPORT_PADDING = 6;
-const DEFAULT_ZOOM_FACTOR = 1;
+const INITIAL_VIEWPORT_PADDING = 6;
+const AUTO_FIT_VIEWPORT_PADDING = 5;
+// Keep a little extra breathing room around the initial view so the
+// scanned QR doesn't start edge-to-edge in the viewport.
+const INITIAL_FIT_ZOOM_FACTOR = 0.9;
+const AUTO_FIT_ZOOM_FACTOR = 1;
+const LARGE_SCREEN_MEDIA_QUERY = "(min-width: 64rem)";
 const DEFAULT_TICK_DELAY_MS = 200;
 const ZOOM_STEP = 1.25;
 const MIN_TICK_DELAY_MS = 0;
 const MAX_TICK_DELAY_MS = 400;
 const TICK_DELAY_STORAGE_KEY = "qr-life:game-of-life:tick-delay-ms";
+const RESIZE_REDRAW_DEBOUNCE_MS = 80;
 
 type Props = {
   onScanAnother: () => void;
@@ -43,7 +49,8 @@ type SessionProps = Props & {
 type Viewport = {
   minX: number;
   minY: number;
-  span: number;
+  spanX: number;
+  spanY: number;
 };
 
 type ViewportCenter = {
@@ -103,18 +110,44 @@ function snapInsetToDevicePixels(
   );
 }
 
-function createSeedUniverse(seed: LifeGrid): LifeUniverse {
-  return createUniverseFromSeed(seed);
+function getInitialFitZoomFactor() {
+  if (
+    typeof window !== "undefined" &&
+    window.matchMedia(LARGE_SCREEN_MEDIA_QUERY).matches
+  ) {
+    return INITIAL_FIT_ZOOM_FACTOR / ZOOM_STEP;
+  }
+
+  return INITIAL_FIT_ZOOM_FACTOR;
+}
+
+function getInitialViewportBaseSpan(
+  viewportBaseSpan: number,
+  center: ViewportCenter,
+) {
+  return normalizeSquareViewportSpan(
+    viewportBaseSpan / getInitialFitZoomFactor(),
+    center,
+  );
 }
 
 function createInitialGameViewState(seed: LifeGrid): InitialGameViewState {
-  const universe = createSeedUniverse(seed);
+  const universe = createUniverseFromSeed(seed);
   const viewportCenter = getSeedViewportCenter(seed);
+  const viewportBaseSpan = getViewportBaseSpan(
+    universe,
+    universe,
+    viewportCenter,
+    INITIAL_VIEWPORT_PADDING,
+  );
 
   return {
     population: countPopulation(universe),
     universe,
-    viewportBaseSpan: getViewportBaseSpan(universe, universe, viewportCenter),
+    viewportBaseSpan: getInitialViewportBaseSpan(
+      viewportBaseSpan,
+      viewportCenter,
+    ),
     viewportCenter,
   };
 }
@@ -138,13 +171,19 @@ function getSeedViewportCenter(seed: LifeGrid): ViewportCenter {
   };
 }
 
-function createViewport(center: ViewportCenter, span: number): Viewport {
-  const halfSpan = (span - 1) / 2;
+function createViewport(
+  center: ViewportCenter,
+  spanX: number,
+  spanY: number,
+): Viewport {
+  const halfSpanX = (spanX - 1) / 2;
+  const halfSpanY = (spanY - 1) / 2;
 
   return {
-    minX: Math.floor(center.x - halfSpan),
-    minY: Math.floor(center.y - halfSpan),
-    span,
+    minX: Math.floor(center.x - halfSpanX),
+    minY: Math.floor(center.y - halfSpanY),
+    spanX,
+    spanY,
   };
 }
 
@@ -157,10 +196,12 @@ function parseCellKey(key: string): ViewportCenter {
   };
 }
 
-function normalizeViewportSpan(span: number, center: ViewportCenter): number {
+function normalizeViewportSpanForAxis(
+  span: number,
+  centerCoordinate: number,
+): number {
   let nextSpan = Math.max(1, Math.ceil(span));
-  const shouldUseOddSpan =
-    Number.isInteger(center.x) && Number.isInteger(center.y);
+  const shouldUseOddSpan = Number.isInteger(centerCoordinate);
 
   if ((nextSpan % 2 === 1) !== shouldUseOddSpan) {
     nextSpan += 1;
@@ -169,32 +210,155 @@ function normalizeViewportSpan(span: number, center: ViewportCenter): number {
   return nextSpan;
 }
 
-function getViewportBaseSpan(
-  universe: LifeUniverse,
-  fallbackUniverse: LifeUniverse,
+function normalizeSquareViewportSpan(
+  span: number,
   center: ViewportCenter,
 ): number {
+  return Math.max(
+    normalizeViewportSpanForAxis(span, center.x),
+    normalizeViewportSpanForAxis(span, center.y),
+  );
+}
+
+function getPaddedUniverseBounds(
+  universe: LifeUniverse,
+  fallbackUniverse: LifeUniverse,
+  viewportPadding: number,
+) {
   const boundsSource = universe.size > 0 ? universe : fallbackUniverse;
   const bounds = getUniverseBounds(boundsSource);
 
   if (!bounds) {
-    return normalizeViewportSpan(MIN_VIEWPORT_SPAN, center);
+    return null;
   }
 
-  const minX = bounds.minX - VIEWPORT_PADDING;
-  const maxX = bounds.maxX + VIEWPORT_PADDING;
-  const minY = bounds.minY - VIEWPORT_PADDING;
-  const maxY = bounds.maxY + VIEWPORT_PADDING;
-  const furthestEdgeDistance = Math.max(
-    Math.abs(center.x - minX),
-    Math.abs(maxX - center.x),
-    Math.abs(center.y - minY),
-    Math.abs(maxY - center.y),
+  return {
+    maxX: bounds.maxX + viewportPadding,
+    maxY: bounds.maxY + viewportPadding,
+    minX: bounds.minX - viewportPadding,
+    minY: bounds.minY - viewportPadding,
+  };
+}
+
+function getViewportBaseSpan(
+  universe: LifeUniverse,
+  fallbackUniverse: LifeUniverse,
+  center: ViewportCenter,
+  viewportPadding: number,
+): number {
+  const paddedBounds = getPaddedUniverseBounds(
+    universe,
+    fallbackUniverse,
+    viewportPadding,
   );
 
-  return normalizeViewportSpan(
+  if (!paddedBounds) {
+    return normalizeSquareViewportSpan(MIN_VIEWPORT_SPAN, center);
+  }
+
+  const furthestEdgeDistance = Math.max(
+    Math.abs(center.x - paddedBounds.minX),
+    Math.abs(paddedBounds.maxX - center.x),
+    Math.abs(center.y - paddedBounds.minY),
+    Math.abs(paddedBounds.maxY - center.y),
+  );
+
+  return normalizeSquareViewportSpan(
     Math.max(MIN_VIEWPORT_SPAN, Math.ceil(furthestEdgeDistance * 2 + 1)),
     center,
+  );
+}
+
+function getRequiredViewportBaseSpan(
+  universe: LifeUniverse,
+  fallbackUniverse: LifeUniverse,
+  center: ViewportCenter,
+  viewportPadding: number,
+  renderedCanvasWidth: number,
+  renderedCanvasHeight: number,
+) {
+  const paddedBounds = getPaddedUniverseBounds(
+    universe,
+    fallbackUniverse,
+    viewportPadding,
+  );
+
+  if (!paddedBounds) {
+    return normalizeSquareViewportSpan(MIN_VIEWPORT_SPAN, center);
+  }
+
+  const requiredSpanX = normalizeViewportSpanForAxis(
+    Math.max(
+      MIN_VIEWPORT_SPAN,
+      Math.ceil(
+        Math.max(
+          Math.abs(center.x - paddedBounds.minX),
+          Math.abs(paddedBounds.maxX - center.x),
+        ) *
+          2 +
+          1,
+      ),
+    ),
+    center.x,
+  );
+  const requiredSpanY = normalizeViewportSpanForAxis(
+    Math.max(
+      MIN_VIEWPORT_SPAN,
+      Math.ceil(
+        Math.max(
+          Math.abs(center.y - paddedBounds.minY),
+          Math.abs(paddedBounds.maxY - center.y),
+        ) *
+          2 +
+          1,
+      ),
+    ),
+    center.y,
+  );
+
+  if (renderedCanvasWidth >= renderedCanvasHeight) {
+    return normalizeViewportSpanForAxis(
+      Math.max(
+        requiredSpanY,
+        (requiredSpanX * renderedCanvasHeight) / renderedCanvasWidth,
+      ),
+      center.y,
+    );
+  }
+
+  return normalizeViewportSpanForAxis(
+    Math.max(
+      requiredSpanX,
+      (requiredSpanY * renderedCanvasWidth) / renderedCanvasHeight,
+    ),
+    center.x,
+  );
+}
+
+function doesUniverseFitViewport(
+  universe: LifeUniverse,
+  fallbackUniverse: LifeUniverse,
+  viewport: Viewport,
+  viewportPadding: number,
+) {
+  const paddedBounds = getPaddedUniverseBounds(
+    universe,
+    fallbackUniverse,
+    viewportPadding,
+  );
+
+  if (!paddedBounds) {
+    return true;
+  }
+
+  const viewportMaxX = viewport.minX + viewport.spanX - 1;
+  const viewportMaxY = viewport.minY + viewport.spanY - 1;
+
+  return (
+    paddedBounds.minX >= viewport.minX &&
+    paddedBounds.maxX <= viewportMaxX &&
+    paddedBounds.minY >= viewport.minY &&
+    paddedBounds.maxY <= viewportMaxY
   );
 }
 
@@ -202,13 +366,28 @@ function buildViewport(
   baseSpan: number,
   center: ViewportCenter,
   zoomFactor: number,
+  renderedCanvasWidth: number,
+  renderedCanvasHeight: number,
 ): Viewport {
-  const span = normalizeViewportSpan(
-    Math.max(1, baseSpan / zoomFactor),
-    center,
+  const nextBaseSpan = Math.max(1, baseSpan / zoomFactor);
+
+  if (renderedCanvasWidth >= renderedCanvasHeight) {
+    const spanY = normalizeViewportSpanForAxis(nextBaseSpan, center.y);
+    const spanX = normalizeViewportSpanForAxis(
+      (spanY * renderedCanvasWidth) / renderedCanvasHeight,
+      center.x,
+    );
+
+    return createViewport(center, spanX, spanY);
+  }
+
+  const spanX = normalizeViewportSpanForAxis(nextBaseSpan, center.x);
+  const spanY = normalizeViewportSpanForAxis(
+    (spanX * renderedCanvasHeight) / renderedCanvasWidth,
+    center.y,
   );
 
-  return createViewport(center, span);
+  return createViewport(center, spanX, spanY);
 }
 
 function drawUniverse(
@@ -218,13 +397,31 @@ function drawUniverse(
   center: ViewportCenter,
   zoomFactor: number,
 ) {
-  const viewport = buildViewport(viewportBaseSpan, center, zoomFactor);
-  const renderedCanvasSize = Math.max(
+  const canvasRect = canvas.getBoundingClientRect();
+  const renderedCanvasWidth = Math.max(
     1,
-    Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
+    Math.floor(canvas.clientWidth || canvasRect.width),
+  );
+  const renderedCanvasHeight = Math.max(
+    1,
+    Math.floor(canvas.clientHeight || canvasRect.height),
+  );
+  const viewport = buildViewport(
+    viewportBaseSpan,
+    center,
+    zoomFactor,
+    renderedCanvasWidth,
+    renderedCanvasHeight,
   );
   const devicePixelRatio = window.devicePixelRatio || 1;
-  const displayCellSize = renderedCanvasSize / viewport.span;
+  const displayCellSize = Math.min(
+    renderedCanvasWidth / viewport.spanX,
+    renderedCanvasHeight / viewport.spanY,
+  );
+  const renderedGridWidth = displayCellSize * viewport.spanX;
+  const renderedGridHeight = displayCellSize * viewport.spanY;
+  const gridOffsetX = (renderedCanvasWidth - renderedGridWidth) / 2;
+  const gridOffsetY = (renderedCanvasHeight - renderedGridHeight) / 2;
   const gridlineInset =
     (displayCellSize * GRIDLINE_CELL_INSET) / CANVAS_CELL_SIZE;
   const liveCellInset = (displayCellSize * LIVE_CELL_INSET) / CANVAS_CELL_SIZE;
@@ -242,8 +439,8 @@ function drawUniverse(
 
   // Keep the bitmap matched to the visible canvas so zooming out
   // doesn't allocate giant off-screen surfaces.
-  canvas.width = Math.round(renderedCanvasSize * devicePixelRatio);
-  canvas.height = Math.round(renderedCanvasSize * devicePixelRatio);
+  canvas.width = Math.round(renderedCanvasWidth * devicePixelRatio);
+  canvas.height = Math.round(renderedCanvasHeight * devicePixelRatio);
 
   const context = canvas.getContext("2d");
 
@@ -253,14 +450,14 @@ function drawUniverse(
 
   context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   context.imageSmoothingEnabled = false;
-  context.clearRect(0, 0, renderedCanvasSize, renderedCanvasSize);
+  context.clearRect(0, 0, renderedCanvasWidth, renderedCanvasHeight);
   context.fillStyle = "#030712";
-  context.fillRect(0, 0, renderedCanvasSize, renderedCanvasSize);
+  context.fillRect(0, 0, renderedCanvasWidth, renderedCanvasHeight);
 
   if (!shouldDrawGrid) {
     const rasterCanvas = document.createElement("canvas");
-    rasterCanvas.width = viewport.span;
-    rasterCanvas.height = viewport.span;
+    rasterCanvas.width = viewport.spanX;
+    rasterCanvas.height = viewport.spanY;
 
     const rasterContext = rasterCanvas.getContext("2d");
 
@@ -278,9 +475,9 @@ function drawUniverse(
 
       if (
         columnIndex < 0 ||
-        columnIndex >= viewport.span ||
+        columnIndex >= viewport.spanX ||
         rowIndex < 0 ||
-        rowIndex >= viewport.span
+        rowIndex >= viewport.spanY
       ) {
         continue;
       }
@@ -290,10 +487,10 @@ function drawUniverse(
 
     context.drawImage(
       rasterCanvas,
-      0,
-      0,
-      renderedCanvasSize,
-      renderedCanvasSize,
+      gridOffsetX,
+      gridOffsetY,
+      renderedGridWidth,
+      renderedGridHeight,
     );
     return;
   }
@@ -302,16 +499,20 @@ function drawUniverse(
     context.fillStyle = "#0f172a";
     context.globalAlpha = gridInsetStrength;
 
-    for (let rowIndex = 0; rowIndex < viewport.span; rowIndex += 1) {
-      for (let columnIndex = 0; columnIndex < viewport.span; columnIndex += 1) {
-        const x = columnIndex * displayCellSize;
-        const y = rowIndex * displayCellSize;
+    for (let rowIndex = 0; rowIndex < viewport.spanY; rowIndex += 1) {
+      for (
+        let columnIndex = 0;
+        columnIndex < viewport.spanX;
+        columnIndex += 1
+      ) {
+        const x = gridOffsetX + columnIndex * displayCellSize;
+        const y = gridOffsetY + rowIndex * displayCellSize;
 
         context.fillRect(
           x + effectiveGridlineInset,
           y + effectiveGridlineInset,
-          displayCellSize - effectiveGridlineInset * 2,
-          displayCellSize - effectiveGridlineInset * 2,
+          Math.max(0, displayCellSize - effectiveGridlineInset * 2),
+          Math.max(0, displayCellSize - effectiveGridlineInset * 2),
         );
       }
     }
@@ -328,21 +529,21 @@ function drawUniverse(
 
     if (
       columnIndex < 0 ||
-      columnIndex >= viewport.span ||
+      columnIndex >= viewport.spanX ||
       rowIndex < 0 ||
-      rowIndex >= viewport.span
+      rowIndex >= viewport.spanY
     ) {
       continue;
     }
 
-    const x = columnIndex * displayCellSize;
-    const y = rowIndex * displayCellSize;
+    const x = gridOffsetX + columnIndex * displayCellSize;
+    const y = gridOffsetY + rowIndex * displayCellSize;
 
     context.fillRect(
       x + effectiveLiveCellInset,
       y + effectiveLiveCellInset,
-      displayCellSize - effectiveLiveCellInset * 2,
-      displayCellSize - effectiveLiveCellInset * 2,
+      Math.max(0, displayCellSize - effectiveLiveCellInset * 2),
+      Math.max(0, displayCellSize - effectiveLiveCellInset * 2),
     );
   }
 }
@@ -357,6 +558,7 @@ function GameOfLifeSession({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const shareFeedbackTimerRef = useRef<number | null>(null);
+  const resizeDebounceTimerRef = useRef<number | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const simulationTimerRef = useRef<number | null>(null);
   const initialGameViewStateRef = useRef(initialGameViewState);
@@ -389,7 +591,7 @@ function GameOfLifeSession({
   const [isRunning, setIsRunning] = useState(false);
   const [isAutoZoomEnabled, setIsAutoZoomEnabled] = useState(true);
   const [tickDelayMs, setTickDelayMs] = useState(DEFAULT_TICK_DELAY_MS);
-  const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
+  const [zoomFactor, setZoomFactor] = useState(AUTO_FIT_ZOOM_FACTOR);
   const isAutoZoomEnabledRef = useRef(isAutoZoomEnabled);
   const zoomFactorRef = useRef(zoomFactor);
 
@@ -429,17 +631,48 @@ function GameOfLifeSession({
     const nextZoomFactor = options?.zoomFactor ?? zoomFactorRef.current;
     const nextSeedViewportCenter =
       initialGameViewStateRef.current.viewportCenter;
-    const nextViewportBaseSpan = getViewportBaseSpan(
-      nextUniverse,
-      initialUniverseRef.current,
-      nextSeedViewportCenter,
+    const renderedCanvasWidth = Math.max(
+      1,
+      Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
+    );
+    const renderedCanvasHeight = Math.max(
+      1,
+      Math.floor(canvas.clientHeight || canvas.getBoundingClientRect().height),
     );
 
     if (nextIsAutoZoomEnabled) {
-      largestViewportBaseSpanRef.current = Math.max(
+      const currentViewport = buildViewport(
         largestViewportBaseSpanRef.current,
-        nextViewportBaseSpan,
+        nextSeedViewportCenter,
+        nextZoomFactor,
+        renderedCanvasWidth,
+        renderedCanvasHeight,
       );
+
+      if (
+        !doesUniverseFitViewport(
+          nextUniverse,
+          initialUniverseRef.current,
+          currentViewport,
+          AUTO_FIT_VIEWPORT_PADDING,
+        )
+      ) {
+        const requiredBaseSpan = getRequiredViewportBaseSpan(
+          nextUniverse,
+          initialUniverseRef.current,
+          nextSeedViewportCenter,
+          AUTO_FIT_VIEWPORT_PADDING,
+          renderedCanvasWidth,
+          renderedCanvasHeight,
+        );
+
+        if (requiredBaseSpan > largestViewportBaseSpanRef.current) {
+          largestViewportBaseSpanRef.current = Math.min(
+            requiredBaseSpan,
+            largestViewportBaseSpanRef.current + 1,
+          );
+        }
+      }
     }
 
     drawUniverse(
@@ -464,8 +697,8 @@ function GameOfLifeSession({
       setUniverse(nextUniverse);
       setIsAutoZoomEnabled(true);
       isAutoZoomEnabledRef.current = true;
-      setZoomFactor(DEFAULT_ZOOM_FACTOR);
-      zoomFactorRef.current = DEFAULT_ZOOM_FACTOR;
+      setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
+      zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
       setGeneration(0);
       setHasStartedOnce(false);
       setPopulation(nextInitialGameViewState.population);
@@ -473,7 +706,7 @@ function GameOfLifeSession({
       redrawUniverse({
         isAutoZoomEnabled: true,
         universe: nextUniverse,
-        zoomFactor: DEFAULT_ZOOM_FACTOR,
+        zoomFactor: AUTO_FIT_ZOOM_FACTOR,
       });
     },
     [redrawUniverse],
@@ -531,9 +764,9 @@ function GameOfLifeSession({
   }, []);
 
   const handleFit = useCallback(() => {
-    setZoomFactor(DEFAULT_ZOOM_FACTOR);
+    setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
     setIsAutoZoomEnabled(true);
-    zoomFactorRef.current = DEFAULT_ZOOM_FACTOR;
+    zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
     isAutoZoomEnabledRef.current = true;
   }, []);
 
@@ -679,14 +912,22 @@ function GameOfLifeSession({
     }
 
     const scheduleRedraw = () => {
-      if (resizeFrameRef.current !== null) {
-        window.cancelAnimationFrame(resizeFrameRef.current);
+      if (resizeDebounceTimerRef.current !== null) {
+        window.clearTimeout(resizeDebounceTimerRef.current);
       }
 
-      resizeFrameRef.current = window.requestAnimationFrame(() => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
-        redrawUniverse();
-      });
+      }
+
+      resizeDebounceTimerRef.current = window.setTimeout(() => {
+        resizeDebounceTimerRef.current = null;
+        resizeFrameRef.current = window.requestAnimationFrame(() => {
+          resizeFrameRef.current = null;
+          redrawUniverse();
+        });
+      }, RESIZE_REDRAW_DEBOUNCE_MS);
     };
 
     const resizeObserver = new ResizeObserver(() => {
@@ -697,6 +938,11 @@ function GameOfLifeSession({
 
     return () => {
       resizeObserver.disconnect();
+
+      if (resizeDebounceTimerRef.current !== null) {
+        window.clearTimeout(resizeDebounceTimerRef.current);
+        resizeDebounceTimerRef.current = null;
+      }
 
       if (resizeFrameRef.current !== null) {
         window.cancelAnimationFrame(resizeFrameRef.current);
@@ -762,140 +1008,148 @@ function GameOfLifeSession({
       : "Start";
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-[1.75rem] border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.95),rgba(5,10,20,0.95)] p-4">
-        <div className="space-y-4">
-          <div className="relative overflow-hidden border border-cyan-300/14 bg-[#020617] p-1">
-            <canvas ref={canvasRef} className="aspect-square w-full" />
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-[#020617]">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 pb-3 sm:gap-4 sm:pb-4">
+          <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden border-b border-cyan-300/14 bg-[#020617] p-1">
+            <div className="relative h-full w-full">
+              <canvas ref={canvasRef} className="h-full w-full" />
 
-            <div className="absolute top-2 sm:top-4 left-2 sm:left-4 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
-              <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
-                Gen
-              </span>
-              <span className="font-mono text-sm text-white sm:text-base lg:text-lg">
-                {generation}
-              </span>
-            </div>
+              <div className="absolute inset-x-2 top-2 flex items-start justify-between gap-2 sm:inset-x-4 sm:top-4 lg:justify-end">
+                <div className="flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
+                  <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
+                    Gen
+                  </span>
+                  <span className="font-mono text-sm text-white sm:text-base lg:text-lg">
+                    {generation}
+                  </span>
+                </div>
 
-            <div className="absolute top-2 sm:top-4 right-2 sm:right-4 flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
-              <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
-                Cells
-              </span>
-              <span className="font-mono text-sm text-cyan-200 sm:text-base lg:text-lg">
-                {population}
-              </span>
-            </div>
+                <div className="flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
+                  <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
+                    Cells
+                  </span>
+                  <span className="font-mono text-sm text-cyan-200 sm:text-base lg:text-lg">
+                    {population}
+                  </span>
+                </div>
+              </div>
 
-            <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 rounded-xl border border-white/12 sm:rounded-full bg-slate-950 p-1.5 pb-3 sm:pl-3 sm:pr-2.5 lg:pr-3 sm:py-2 lg:py-3">
-              <label className="flex flex-col items-center gap-2 sm:flex-row">
-                <span className="text-[0.6rem] sm:text-xs lg:text-sm font-medium uppercase tracking-[0.24em] text-slate-200/80">
-                  Speed
-                </span>
-                <input
-                  type="range"
-                  min={MIN_TICK_DELAY_MS}
-                  max={MAX_TICK_DELAY_MS}
-                  step={20}
-                  value={speedSliderValue}
-                  onChange={handleSpeedChange}
-                  className="h-1.5 w-20 sm:w-28 cursor-pointer accent-cyan-300"
-                  aria-label="Simulation speed"
-                />
-              </label>
-            </div>
+              <div className="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2 sm:inset-x-4 sm:bottom-4 lg:justify-end">
+                <div className="rounded-xl border border-white/12 bg-slate-950 p-1.5 pb-3 sm:rounded-full sm:py-2 sm:pl-3 sm:pr-2.5 lg:py-3 lg:pr-3">
+                  <label className="flex flex-col items-center gap-2 sm:flex-row">
+                    <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
+                      Speed
+                    </span>
+                    <input
+                      type="range"
+                      min={MIN_TICK_DELAY_MS}
+                      max={MAX_TICK_DELAY_MS}
+                      step={20}
+                      value={speedSliderValue}
+                      onChange={handleSpeedChange}
+                      className="h-1.5 w-20 cursor-pointer accent-cyan-300 sm:w-28"
+                      aria-label="Simulation speed"
+                    />
+                  </label>
+                </div>
 
-            <div className="absolute right-2 sm:right-4 bottom-2 sm:bottom-4 flex flex-col items-center gap-1 rounded-xl border border-white/12 bg-slate-950 p-1.5 sm:flex-row sm:gap-2 sm:rounded-full sm:pl-3 sm:pr-1.5 lg:pr-2 sm:py-1 lg:py-1.5">
-              <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
-                Zoom
-              </span>
-              <div className="inline-flex items-center gap-1">
-                <Button
-                  type="button"
-                  onClick={handleZoomOut}
-                  variant="quiet"
-                  className="size-6 lg:size-8 rounded-full bg-slate-900/82 text-xl lg:text-2xl leading-none font-semibold hover:bg-slate-800/88"
-                >
-                  -
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleZoomIn}
-                  variant="quiet"
-                  className="size-6 lg:size-8 rounded-full bg-slate-900/82 text-xl lg:text-2xl leading-none font-semibold hover:bg-slate-800/88"
-                >
-                  +
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleFit}
-                  variant="quiet"
-                  aria-pressed={isAutoZoomEnabled}
-                  className="size-6 lg:size-8 rounded-full bg-slate-900/82 text-[0.5rem] lg:text-xs leading-none font-semibold uppercase tracking-[0.08em] text-slate-200/80 hover:bg-slate-800/88"
-                >
-                  Fit
-                </Button>
+                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/12 bg-slate-950 p-1.5 sm:flex-row sm:gap-2 sm:rounded-full sm:py-1 sm:pl-3 sm:pr-1.5 lg:py-1.5 lg:pr-2">
+                  <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
+                    Zoom
+                  </span>
+                  <div className="inline-flex items-center gap-1">
+                    <Button
+                      type="button"
+                      onClick={handleZoomOut}
+                      variant="quiet"
+                      className="size-6 rounded-full bg-slate-900/82 text-xl leading-none font-semibold hover:bg-slate-800/88 lg:size-8 lg:text-2xl"
+                    >
+                      -
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleZoomIn}
+                      variant="quiet"
+                      className="size-6 rounded-full bg-slate-900/82 text-xl leading-none font-semibold hover:bg-slate-800/88 lg:size-8 lg:text-2xl"
+                    >
+                      +
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleFit}
+                      variant="quiet"
+                      aria-pressed={isAutoZoomEnabled}
+                      className="size-6 rounded-full bg-slate-900/82 text-[0.5rem] leading-none font-semibold uppercase tracking-[0.08em] text-slate-200/80 hover:bg-slate-800/88 lg:size-8 lg:text-xs"
+                    >
+                      Fit
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Button
-              type="button"
-              onClick={handleStart}
-              variant="aurora"
-              className="h-auto px-5 py-2.5 text-sm font-semibold"
-            >
-              {startButtonLabel}
-            </Button>
+          <div className="shrink-0 px-3 sm:px-4">
+            <div className="flex flex-wrap gap-3 lg:justify-center">
+              <Button
+                type="button"
+                onClick={handleStart}
+                variant="aurora"
+                className="h-auto px-5 py-2.5 text-sm font-semibold"
+              >
+                {startButtonLabel}
+              </Button>
 
-            <Button
-              type="button"
-              onClick={handleReset}
-              variant="glass"
-              className="h-auto px-5 py-2.5 text-sm font-semibold"
-            >
-              Reset
-            </Button>
+              <Button
+                type="button"
+                onClick={handleReset}
+                variant="glass"
+                className="h-auto px-5 py-2.5 text-sm font-semibold"
+              >
+                Reset
+              </Button>
 
-            <Button
-              type="button"
-              onClick={onScanAnother}
-              variant="quiet"
-              className="h-auto px-5 py-2.5 text-sm font-semibold"
-            >
-              New
-            </Button>
+              <Button
+                type="button"
+                onClick={onScanAnother}
+                variant="quiet"
+                className="h-auto px-5 py-2.5 text-sm font-semibold"
+              >
+                New
+              </Button>
 
-            <div className="relative min-w-40 max-w-80 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5">
-              <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
-                {qrValue ?? "No QR captured yet."}
-              </p>
-              <div className="absolute inset-y-0 right-2 flex items-center">
-                <Button
-                  type="button"
-                  onClick={handleCopyQrValue}
-                  variant="quiet"
-                  className="h-8 min-w-8 rounded-full bg-slate-900/88 px-0 text-slate-200 hover:bg-slate-800"
-                  disabled={!qrValue}
-                  aria-label={copyButtonLabel}
-                  title={copyButtonLabel}
-                >
-                  <CopyButtonIcon className="size-4" />
-                </Button>
+              <div className="relative min-w-40 max-w-80 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 lg:w-80 lg:flex-none">
+                <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
+                  {qrValue ?? "No QR captured yet."}
+                </p>
+                <div className="absolute inset-y-0 right-2 flex items-center">
+                  <Button
+                    type="button"
+                    onClick={handleCopyQrValue}
+                    variant="quiet"
+                    className="h-8 min-w-8 rounded-full bg-slate-900/88 px-0 text-slate-200 hover:bg-slate-800"
+                    disabled={!qrValue}
+                    aria-label={copyButtonLabel}
+                    title={copyButtonLabel}
+                  >
+                    <CopyButtonIcon className="size-4" />
+                  </Button>
+                </div>
               </div>
-            </div>
 
-            <Button
-              type="button"
-              onClick={handleShareCurrentUrl}
-              variant="quiet"
-              className="size-11 shrink-0 rounded-full border-white/10 bg-slate-950/70 text-slate-200 hover:bg-slate-900/88"
-              disabled={!canShareCurrentUrl}
-              aria-label={shareButtonLabel}
-              title={shareButtonLabel}
-            >
-              <ShareButtonIcon className="size-4" />
-            </Button>
+              <Button
+                type="button"
+                onClick={handleShareCurrentUrl}
+                variant="quiet"
+                className="size-11 shrink-0 rounded-full border-white/10 bg-slate-950/70 text-slate-200 hover:bg-slate-900/88"
+                disabled={!canShareCurrentUrl}
+                aria-label={shareButtonLabel}
+                title={shareButtonLabel}
+              >
+                <ShareButtonIcon className="size-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>

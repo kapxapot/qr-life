@@ -9,10 +9,8 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <main className="flex h-dvh items-center justify-center p-2 sm:p-4">
-      <div className="flex w-full justify-center">
-        <MainView />
-      </div>
+    <main className="flex h-dvh w-full overflow-hidden">
+      <MainView />
     </main>
   );
 }
