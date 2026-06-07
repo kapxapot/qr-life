@@ -17,7 +17,9 @@ import {
 const CANVAS_CELL_SIZE = 14;
 const GRIDLINE_CELL_INSET = 1;
 const LIVE_CELL_INSET = 1.75;
-const INTERIOR_GRIDLINE_WIDTH = GRIDLINE_CELL_INSET * 2;
+const GRID_INSET_START_RATIO = 0.8;
+const GRID_INSET_END_RATIO = 1.6;
+const MIN_VISIBLE_LIVE_CELL_GAP_DEVICE_PIXELS = 2;
 const LIVE_CELL_COLOR = "#67e8f9";
 const MIN_VIEWPORT_SPAN = 41;
 const VIEWPORT_PADDING = 6;
@@ -58,6 +60,41 @@ type InitialGameViewState = {
 
 function clampTickDelayMs(value: number) {
   return Math.min(MAX_TICK_DELAY_MS, Math.max(MIN_TICK_DELAY_MS, value));
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getGridInsetStrength(displayCellSize: number) {
+  const normalizedCellSize = Math.max(0, displayCellSize / CANVAS_CELL_SIZE);
+  const insetProgress = clamp(
+    (normalizedCellSize - GRID_INSET_START_RATIO) /
+      (GRID_INSET_END_RATIO - GRID_INSET_START_RATIO),
+    0,
+    1,
+  );
+
+  // Keep small cells completely solid, then ease the inset in only once the
+  // cells are large enough for the separation to read as an intentional grid.
+  return insetProgress * insetProgress * (3 - 2 * insetProgress);
+}
+
+function snapInsetToDevicePixels(
+  inset: number,
+  devicePixelRatio: number,
+  minGapDevicePixels: number,
+) {
+  if (inset <= 0) {
+    return 0;
+  }
+
+  const minimumInset = minGapDevicePixels / 2 / devicePixelRatio;
+
+  return Math.max(
+    minimumInset,
+    Math.ceil(inset * devicePixelRatio) / devicePixelRatio,
+  );
 }
 
 function createSeedUniverse(seed: LifeGrid): LifeUniverse {
@@ -182,12 +219,20 @@ function drawUniverse(
   );
   const devicePixelRatio = window.devicePixelRatio || 1;
   const displayCellSize = renderedCanvasSize / viewport.span;
-  const displayGridlineWidth =
-    (displayCellSize * INTERIOR_GRIDLINE_WIDTH) / CANVAS_CELL_SIZE;
   const gridlineInset =
     (displayCellSize * GRIDLINE_CELL_INSET) / CANVAS_CELL_SIZE;
   const liveCellInset = (displayCellSize * LIVE_CELL_INSET) / CANVAS_CELL_SIZE;
-  const showGridLines = displayGridlineWidth >= 1;
+  const gridInsetStrength = getGridInsetStrength(displayCellSize);
+  const desiredLiveCellInset = liveCellInset * gridInsetStrength;
+  const effectiveLiveCellInset = snapInsetToDevicePixels(
+    desiredLiveCellInset,
+    devicePixelRatio,
+    MIN_VISIBLE_LIVE_CELL_GAP_DEVICE_PIXELS,
+  );
+  const insetScale =
+    liveCellInset > 0 ? clamp(effectiveLiveCellInset / liveCellInset, 0, 1) : 0;
+  const effectiveGridlineInset = gridlineInset * insetScale;
+  const shouldDrawGrid = gridInsetStrength > 0;
 
   // Keep the bitmap matched to the visible canvas so zooming out
   // doesn't allocate giant off-screen surfaces.
@@ -206,8 +251,50 @@ function drawUniverse(
   context.fillStyle = "#030712";
   context.fillRect(0, 0, renderedCanvasSize, renderedCanvasSize);
 
-  if (showGridLines) {
+  if (!shouldDrawGrid) {
+    const rasterCanvas = document.createElement("canvas");
+    rasterCanvas.width = viewport.span;
+    rasterCanvas.height = viewport.span;
+
+    const rasterContext = rasterCanvas.getContext("2d");
+
+    if (!rasterContext) {
+      return;
+    }
+
+    rasterContext.imageSmoothingEnabled = false;
+    rasterContext.fillStyle = LIVE_CELL_COLOR;
+
+    for (const cellKey of universe) {
+      const { x: worldX, y: worldY } = parseCellKey(cellKey);
+      const columnIndex = worldX - viewport.minX;
+      const rowIndex = worldY - viewport.minY;
+
+      if (
+        columnIndex < 0 ||
+        columnIndex >= viewport.span ||
+        rowIndex < 0 ||
+        rowIndex >= viewport.span
+      ) {
+        continue;
+      }
+
+      rasterContext.fillRect(columnIndex, rowIndex, 1, 1);
+    }
+
+    context.drawImage(
+      rasterCanvas,
+      0,
+      0,
+      renderedCanvasSize,
+      renderedCanvasSize,
+    );
+    return;
+  }
+
+  if (shouldDrawGrid) {
     context.fillStyle = "#0f172a";
+    context.globalAlpha = gridInsetStrength;
 
     for (let rowIndex = 0; rowIndex < viewport.span; rowIndex += 1) {
       for (let columnIndex = 0; columnIndex < viewport.span; columnIndex += 1) {
@@ -215,13 +302,15 @@ function drawUniverse(
         const y = rowIndex * displayCellSize;
 
         context.fillRect(
-          x + gridlineInset,
-          y + gridlineInset,
-          displayCellSize - gridlineInset * 2,
-          displayCellSize - gridlineInset * 2,
+          x + effectiveGridlineInset,
+          y + effectiveGridlineInset,
+          displayCellSize - effectiveGridlineInset * 2,
+          displayCellSize - effectiveGridlineInset * 2,
         );
       }
     }
+
+    context.globalAlpha = 1;
   }
 
   context.fillStyle = LIVE_CELL_COLOR;
@@ -243,17 +332,12 @@ function drawUniverse(
     const x = columnIndex * displayCellSize;
     const y = rowIndex * displayCellSize;
 
-    if (showGridLines) {
-      context.fillRect(
-        x + liveCellInset,
-        y + liveCellInset,
-        displayCellSize - liveCellInset * 2,
-        displayCellSize - liveCellInset * 2,
-      );
-      continue;
-    }
-
-    context.fillRect(x, y, displayCellSize, displayCellSize);
+    context.fillRect(
+      x + effectiveLiveCellInset,
+      y + effectiveLiveCellInset,
+      displayCellSize - effectiveLiveCellInset * 2,
+      displayCellSize - effectiveLiveCellInset * 2,
+    );
   }
 }
 
