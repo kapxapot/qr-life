@@ -51,6 +51,12 @@ type ViewportCenter = {
   y: number;
 };
 
+type RedrawOptions = {
+  isAutoZoomEnabled?: boolean;
+  universe?: LifeUniverse;
+  zoomFactor?: number;
+};
+
 type InitialGameViewState = {
   population: number;
   universe: LifeUniverse;
@@ -351,6 +357,7 @@ function GameOfLifeSession({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const shareFeedbackTimerRef = useRef<number | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
   const simulationTimerRef = useRef<number | null>(null);
   const initialGameViewStateRef = useRef(initialGameViewState);
   const initialUniverseRef = useRef<LifeUniverse>(
@@ -383,6 +390,8 @@ function GameOfLifeSession({
   const [isAutoZoomEnabled, setIsAutoZoomEnabled] = useState(true);
   const [tickDelayMs, setTickDelayMs] = useState(DEFAULT_TICK_DELAY_MS);
   const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
+  const isAutoZoomEnabledRef = useRef(isAutoZoomEnabled);
+  const zoomFactorRef = useRef(zoomFactor);
 
   const stopSimulation = useCallback(() => {
     if (simulationTimerRef.current) {
@@ -407,6 +416,41 @@ function GameOfLifeSession({
     }
   }, []);
 
+  const redrawUniverse = useCallback((options?: RedrawOptions) => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const nextUniverse = options?.universe ?? universeRef.current;
+    const nextIsAutoZoomEnabled =
+      options?.isAutoZoomEnabled ?? isAutoZoomEnabledRef.current;
+    const nextZoomFactor = options?.zoomFactor ?? zoomFactorRef.current;
+    const nextSeedViewportCenter =
+      initialGameViewStateRef.current.viewportCenter;
+    const nextViewportBaseSpan = getViewportBaseSpan(
+      nextUniverse,
+      initialUniverseRef.current,
+      nextSeedViewportCenter,
+    );
+
+    if (nextIsAutoZoomEnabled) {
+      largestViewportBaseSpanRef.current = Math.max(
+        largestViewportBaseSpanRef.current,
+        nextViewportBaseSpan,
+      );
+    }
+
+    drawUniverse(
+      canvas,
+      nextUniverse,
+      largestViewportBaseSpanRef.current,
+      nextSeedViewportCenter,
+      nextZoomFactor,
+    );
+  }, []);
+
   const restoreInitialGameView = useCallback(
     (nextInitialGameViewState = initialGameViewStateRef.current) => {
       const nextUniverse = cloneUniverse(nextInitialGameViewState.universe);
@@ -419,26 +463,20 @@ function GameOfLifeSession({
       universeRef.current = nextUniverse;
       setUniverse(nextUniverse);
       setIsAutoZoomEnabled(true);
+      isAutoZoomEnabledRef.current = true;
       setZoomFactor(DEFAULT_ZOOM_FACTOR);
+      zoomFactorRef.current = DEFAULT_ZOOM_FACTOR;
       setGeneration(0);
       setHasStartedOnce(false);
       setPopulation(nextInitialGameViewState.population);
 
-      const canvas = canvasRef.current;
-
-      if (!canvas) {
-        return;
-      }
-
-      drawUniverse(
-        canvas,
-        nextUniverse,
-        nextInitialGameViewState.viewportBaseSpan,
-        nextInitialGameViewState.viewportCenter,
-        DEFAULT_ZOOM_FACTOR,
-      );
+      redrawUniverse({
+        isAutoZoomEnabled: true,
+        universe: nextUniverse,
+        zoomFactor: DEFAULT_ZOOM_FACTOR,
+      });
     },
-    [],
+    [redrawUniverse],
   );
 
   const advanceLife = useCallback(() => {
@@ -474,17 +512,29 @@ function GameOfLifeSession({
 
   const handleZoomIn = useCallback(() => {
     setIsAutoZoomEnabled(false);
-    setZoomFactor((current) => current * ZOOM_STEP);
+    isAutoZoomEnabledRef.current = false;
+    setZoomFactor((current) => {
+      const nextZoomFactor = current * ZOOM_STEP;
+      zoomFactorRef.current = nextZoomFactor;
+      return nextZoomFactor;
+    });
   }, []);
 
   const handleZoomOut = useCallback(() => {
     setIsAutoZoomEnabled(false);
-    setZoomFactor((current) => current / ZOOM_STEP);
+    isAutoZoomEnabledRef.current = false;
+    setZoomFactor((current) => {
+      const nextZoomFactor = current / ZOOM_STEP;
+      zoomFactorRef.current = nextZoomFactor;
+      return nextZoomFactor;
+    });
   }, []);
 
   const handleFit = useCallback(() => {
     setZoomFactor(DEFAULT_ZOOM_FACTOR);
     setIsAutoZoomEnabled(true);
+    zoomFactorRef.current = DEFAULT_ZOOM_FACTOR;
+    isAutoZoomEnabledRef.current = true;
   }, []);
 
   const handleSpeedChange = useCallback(
@@ -588,6 +638,14 @@ function GameOfLifeSession({
   }, [hasLoadedTickDelayPreference, tickDelayMs]);
 
   useEffect(() => {
+    isAutoZoomEnabledRef.current = isAutoZoomEnabled;
+  }, [isAutoZoomEnabled]);
+
+  useEffect(() => {
+    zoomFactorRef.current = zoomFactor;
+  }, [zoomFactor]);
+
+  useEffect(() => {
     stopSimulation();
     clearCopyFeedbackTimer();
     clearShareFeedbackTimer();
@@ -606,35 +664,46 @@ function GameOfLifeSession({
   ]);
 
   useEffect(() => {
+    redrawUniverse({
+      isAutoZoomEnabled,
+      universe,
+      zoomFactor,
+    });
+  }, [isAutoZoomEnabled, redrawUniverse, universe, zoomFactor]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
 
-    if (!canvas) {
+    if (!canvas || typeof ResizeObserver === "undefined") {
       return;
     }
 
-    const nextSeedViewportCenter =
-      initialGameViewStateRef.current.viewportCenter;
-    const nextViewportBaseSpan = getViewportBaseSpan(
-      universe,
-      initialUniverseRef.current,
-      nextSeedViewportCenter,
-    );
+    const scheduleRedraw = () => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+      }
 
-    if (isAutoZoomEnabled) {
-      largestViewportBaseSpanRef.current = Math.max(
-        largestViewportBaseSpanRef.current,
-        nextViewportBaseSpan,
-      );
-    }
+      resizeFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        redrawUniverse();
+      });
+    };
 
-    drawUniverse(
-      canvas,
-      universe,
-      largestViewportBaseSpanRef.current,
-      nextSeedViewportCenter,
-      zoomFactor,
-    );
-  }, [isAutoZoomEnabled, universe, zoomFactor]);
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleRedraw();
+    });
+
+    resizeObserver.observe(canvas);
+
+    return () => {
+      resizeObserver.disconnect();
+
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+    };
+  }, [redrawUniverse]);
 
   useEffect(() => {
     if (!isRunning) {
