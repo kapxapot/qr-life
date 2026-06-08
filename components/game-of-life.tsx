@@ -1,7 +1,11 @@
 "use client";
 
 import { RiCheckLine, RiFileCopyLine, RiShareLine } from "@remixicon/react";
-import type { ChangeEvent } from "react";
+import type {
+  ChangeEvent,
+  PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
+} from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +35,9 @@ const AUTO_FIT_ZOOM_FACTOR = 1;
 const LARGE_SCREEN_MEDIA_QUERY = "(min-width: 64rem)";
 const DEFAULT_TICK_DELAY_MS = 200;
 const ZOOM_STEP = 1.25;
+const MIN_ZOOM_FACTOR = 0.125;
+const MAX_ZOOM_FACTOR = 64;
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 const MIN_TICK_DELAY_MS = 0;
 const MAX_TICK_DELAY_MS = 400;
 const TICK_DELAY_STORAGE_KEY = "qr-life:game-of-life:tick-delay-ms";
@@ -47,6 +54,9 @@ type SessionProps = Props & {
 };
 
 type Viewport = {
+  center: ViewportCenter;
+  maxX: number;
+  maxY: number;
   minX: number;
   minY: number;
   spanX: number;
@@ -61,6 +71,7 @@ type ViewportCenter = {
 type RedrawOptions = {
   isAutoZoomEnabled?: boolean;
   universe?: LifeUniverse;
+  viewportCenter?: ViewportCenter;
   zoomFactor?: number;
 };
 
@@ -71,12 +82,35 @@ type InitialGameViewState = {
   viewportCenter: ViewportCenter;
 };
 
+type CanvasViewportMetrics = {
+  canvasRect: DOMRect;
+  displayCellSize: number;
+  renderedCanvasHeight: number;
+  renderedCanvasWidth: number;
+  viewport: Viewport;
+};
+
+type PointerCoordinates = {
+  clientX: number;
+  clientY: number;
+};
+
+type PinchGesture = {
+  centerX: number;
+  centerY: number;
+  distance: number;
+};
+
 function clampTickDelayMs(value: number) {
   return Math.min(MAX_TICK_DELAY_MS, Math.max(MIN_TICK_DELAY_MS, value));
 }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function clampZoomFactor(value: number) {
+  return clamp(value, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
 }
 
 function getGridInsetStrength(displayCellSize: number) {
@@ -121,13 +155,9 @@ function getInitialFitZoomFactor() {
   return INITIAL_FIT_ZOOM_FACTOR;
 }
 
-function getInitialViewportBaseSpan(
-  viewportBaseSpan: number,
-  center: ViewportCenter,
-) {
+function getInitialViewportBaseSpan(viewportBaseSpan: number) {
   return normalizeSquareViewportSpan(
     viewportBaseSpan / getInitialFitZoomFactor(),
-    center,
   );
 }
 
@@ -144,10 +174,7 @@ function createInitialGameViewState(seed: LifeGrid): InitialGameViewState {
   return {
     population: countPopulation(universe),
     universe,
-    viewportBaseSpan: getInitialViewportBaseSpan(
-      viewportBaseSpan,
-      viewportCenter,
-    ),
+    viewportBaseSpan: getInitialViewportBaseSpan(viewportBaseSpan),
     viewportCenter,
   };
 }
@@ -180,8 +207,11 @@ function createViewport(
   const halfSpanY = (spanY - 1) / 2;
 
   return {
-    minX: Math.floor(center.x - halfSpanX),
-    minY: Math.floor(center.y - halfSpanY),
+    center,
+    maxX: center.x + halfSpanX,
+    maxY: center.y + halfSpanY,
+    minX: center.x - halfSpanX,
+    minY: center.y - halfSpanY,
     spanX,
     spanY,
   };
@@ -196,28 +226,12 @@ function parseCellKey(key: string): ViewportCenter {
   };
 }
 
-function normalizeViewportSpanForAxis(
-  span: number,
-  centerCoordinate: number,
-): number {
-  let nextSpan = Math.max(1, Math.ceil(span));
-  const shouldUseOddSpan = Number.isInteger(centerCoordinate);
-
-  if ((nextSpan % 2 === 1) !== shouldUseOddSpan) {
-    nextSpan += 1;
-  }
-
-  return nextSpan;
+function normalizeViewportSpanForAxis(span: number): number {
+  return Math.max(1, Math.ceil(span));
 }
 
-function normalizeSquareViewportSpan(
-  span: number,
-  center: ViewportCenter,
-): number {
-  return Math.max(
-    normalizeViewportSpanForAxis(span, center.x),
-    normalizeViewportSpanForAxis(span, center.y),
-  );
+function normalizeSquareViewportSpan(span: number): number {
+  return normalizeViewportSpanForAxis(span);
 }
 
 function getPaddedUniverseBounds(
@@ -253,7 +267,7 @@ function getViewportBaseSpan(
   );
 
   if (!paddedBounds) {
-    return normalizeSquareViewportSpan(MIN_VIEWPORT_SPAN, center);
+    return normalizeSquareViewportSpan(MIN_VIEWPORT_SPAN);
   }
 
   const furthestEdgeDistance = Math.max(
@@ -265,7 +279,6 @@ function getViewportBaseSpan(
 
   return normalizeSquareViewportSpan(
     Math.max(MIN_VIEWPORT_SPAN, Math.ceil(furthestEdgeDistance * 2 + 1)),
-    center,
   );
 }
 
@@ -284,7 +297,7 @@ function getRequiredViewportBaseSpan(
   );
 
   if (!paddedBounds) {
-    return normalizeSquareViewportSpan(MIN_VIEWPORT_SPAN, center);
+    return normalizeSquareViewportSpan(MIN_VIEWPORT_SPAN);
   }
 
   const requiredSpanX = normalizeViewportSpanForAxis(
@@ -299,7 +312,6 @@ function getRequiredViewportBaseSpan(
           1,
       ),
     ),
-    center.x,
   );
   const requiredSpanY = normalizeViewportSpanForAxis(
     Math.max(
@@ -313,7 +325,6 @@ function getRequiredViewportBaseSpan(
           1,
       ),
     ),
-    center.y,
   );
 
   if (renderedCanvasWidth >= renderedCanvasHeight) {
@@ -322,7 +333,6 @@ function getRequiredViewportBaseSpan(
         requiredSpanY,
         (requiredSpanX * renderedCanvasHeight) / renderedCanvasWidth,
       ),
-      center.y,
     );
   }
 
@@ -331,7 +341,6 @@ function getRequiredViewportBaseSpan(
       requiredSpanX,
       (requiredSpanY * renderedCanvasWidth) / renderedCanvasHeight,
     ),
-    center.x,
   );
 }
 
@@ -351,14 +360,11 @@ function doesUniverseFitViewport(
     return true;
   }
 
-  const viewportMaxX = viewport.minX + viewport.spanX - 1;
-  const viewportMaxY = viewport.minY + viewport.spanY - 1;
-
   return (
     paddedBounds.minX >= viewport.minX &&
-    paddedBounds.maxX <= viewportMaxX &&
+    paddedBounds.maxX <= viewport.maxX &&
     paddedBounds.minY >= viewport.minY &&
-    paddedBounds.maxY <= viewportMaxY
+    paddedBounds.maxY <= viewport.maxY
   );
 }
 
@@ -372,31 +378,28 @@ function buildViewport(
   const nextBaseSpan = Math.max(1, baseSpan / zoomFactor);
 
   if (renderedCanvasWidth >= renderedCanvasHeight) {
-    const spanY = normalizeViewportSpanForAxis(nextBaseSpan, center.y);
+    const spanY = normalizeViewportSpanForAxis(nextBaseSpan);
     const spanX = normalizeViewportSpanForAxis(
       (spanY * renderedCanvasWidth) / renderedCanvasHeight,
-      center.x,
     );
 
     return createViewport(center, spanX, spanY);
   }
 
-  const spanX = normalizeViewportSpanForAxis(nextBaseSpan, center.x);
+  const spanX = normalizeViewportSpanForAxis(nextBaseSpan);
   const spanY = normalizeViewportSpanForAxis(
     (spanX * renderedCanvasHeight) / renderedCanvasWidth,
-    center.y,
   );
 
   return createViewport(center, spanX, spanY);
 }
 
-function drawUniverse(
+function getCanvasViewportMetrics(
   canvas: HTMLCanvasElement,
-  universe: LifeUniverse,
   viewportBaseSpan: number,
   center: ViewportCenter,
   zoomFactor: number,
-) {
+): CanvasViewportMetrics {
   const canvasRect = canvas.getBoundingClientRect();
   const renderedCanvasWidth = Math.max(
     1,
@@ -413,15 +416,75 @@ function drawUniverse(
     renderedCanvasWidth,
     renderedCanvasHeight,
   );
-  const devicePixelRatio = window.devicePixelRatio || 1;
   const displayCellSize = Math.min(
     renderedCanvasWidth / viewport.spanX,
     renderedCanvasHeight / viewport.spanY,
   );
-  const renderedGridWidth = displayCellSize * viewport.spanX;
-  const renderedGridHeight = displayCellSize * viewport.spanY;
-  const gridOffsetX = (renderedCanvasWidth - renderedGridWidth) / 2;
-  const gridOffsetY = (renderedCanvasHeight - renderedGridHeight) / 2;
+
+  return {
+    canvasRect,
+    displayCellSize,
+    renderedCanvasHeight,
+    renderedCanvasWidth,
+    viewport,
+  };
+}
+
+function getClientPointWorldCoordinates(
+  canvasMetrics: CanvasViewportMetrics,
+  clientX: number,
+  clientY: number,
+) {
+  const localX = clientX - canvasMetrics.canvasRect.left;
+  const localY = clientY - canvasMetrics.canvasRect.top;
+  const halfCanvasWidth = canvasMetrics.renderedCanvasWidth / 2;
+  const halfCanvasHeight = canvasMetrics.renderedCanvasHeight / 2;
+
+  return {
+    worldX:
+      canvasMetrics.viewport.center.x +
+      (localX - halfCanvasWidth) / canvasMetrics.displayCellSize,
+    worldY:
+      canvasMetrics.viewport.center.y +
+      (localY - halfCanvasHeight) / canvasMetrics.displayCellSize,
+  };
+}
+
+function getPinchGesture(
+  activePointers: Map<number, PointerCoordinates>,
+): PinchGesture | null {
+  const [firstPointer, secondPointer] = Array.from(activePointers.values());
+
+  if (!firstPointer || !secondPointer) {
+    return null;
+  }
+
+  const deltaX = secondPointer.clientX - firstPointer.clientX;
+  const deltaY = secondPointer.clientY - firstPointer.clientY;
+
+  return {
+    centerX: (firstPointer.clientX + secondPointer.clientX) / 2,
+    centerY: (firstPointer.clientY + secondPointer.clientY) / 2,
+    distance: Math.hypot(deltaX, deltaY),
+  };
+}
+
+function drawUniverse(
+  canvas: HTMLCanvasElement,
+  universe: LifeUniverse,
+  viewportBaseSpan: number,
+  center: ViewportCenter,
+  zoomFactor: number,
+) {
+  const {
+    displayCellSize,
+    renderedCanvasHeight,
+    renderedCanvasWidth,
+    viewport,
+  } = getCanvasViewportMetrics(canvas, viewportBaseSpan, center, zoomFactor);
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const canvasCenterX = renderedCanvasWidth / 2;
+  const canvasCenterY = renderedCanvasHeight / 2;
   const gridlineInset =
     (displayCellSize * GRIDLINE_CELL_INSET) / CANVAS_CELL_SIZE;
   const liveCellInset = (displayCellSize * LIVE_CELL_INSET) / CANVAS_CELL_SIZE;
@@ -454,59 +517,30 @@ function drawUniverse(
   context.fillStyle = "#030712";
   context.fillRect(0, 0, renderedCanvasWidth, renderedCanvasHeight);
 
-  if (!shouldDrawGrid) {
-    const rasterCanvas = document.createElement("canvas");
-    rasterCanvas.width = viewport.spanX;
-    rasterCanvas.height = viewport.spanY;
-
-    const rasterContext = rasterCanvas.getContext("2d");
-
-    if (!rasterContext) {
-      return;
-    }
-
-    rasterContext.imageSmoothingEnabled = false;
-    rasterContext.fillStyle = LIVE_CELL_COLOR;
-
-    for (const cellKey of universe) {
-      const { x: worldX, y: worldY } = parseCellKey(cellKey);
-      const columnIndex = worldX - viewport.minX;
-      const rowIndex = worldY - viewport.minY;
-
-      if (
-        columnIndex < 0 ||
-        columnIndex >= viewport.spanX ||
-        rowIndex < 0 ||
-        rowIndex >= viewport.spanY
-      ) {
-        continue;
-      }
-
-      rasterContext.fillRect(columnIndex, rowIndex, 1, 1);
-    }
-
-    context.drawImage(
-      rasterCanvas,
-      gridOffsetX,
-      gridOffsetY,
-      renderedGridWidth,
-      renderedGridHeight,
-    );
-    return;
-  }
-
   if (shouldDrawGrid) {
     context.fillStyle = "#0f172a";
     context.globalAlpha = gridInsetStrength;
 
-    for (let rowIndex = 0; rowIndex < viewport.spanY; rowIndex += 1) {
-      for (
-        let columnIndex = 0;
-        columnIndex < viewport.spanX;
-        columnIndex += 1
-      ) {
-        const x = gridOffsetX + columnIndex * displayCellSize;
-        const y = gridOffsetY + rowIndex * displayCellSize;
+    const startWorldY = Math.floor(viewport.center.y - viewport.spanY / 2);
+    const endWorldY = Math.ceil(viewport.center.y + viewport.spanY / 2);
+    const startWorldX = Math.floor(viewport.center.x - viewport.spanX / 2);
+    const endWorldX = Math.ceil(viewport.center.x + viewport.spanX / 2);
+
+    for (let worldY = startWorldY; worldY <= endWorldY; worldY += 1) {
+      const y =
+        canvasCenterY + (worldY - viewport.center.y - 0.5) * displayCellSize;
+
+      if (y >= renderedCanvasHeight || y + displayCellSize <= 0) {
+        continue;
+      }
+
+      for (let worldX = startWorldX; worldX <= endWorldX; worldX += 1) {
+        const x =
+          canvasCenterX + (worldX - viewport.center.x - 0.5) * displayCellSize;
+
+        if (x >= renderedCanvasWidth || x + displayCellSize <= 0) {
+          continue;
+        }
 
         context.fillRect(
           x + effectiveGridlineInset,
@@ -524,20 +558,19 @@ function drawUniverse(
 
   for (const cellKey of universe) {
     const { x: worldX, y: worldY } = parseCellKey(cellKey);
-    const columnIndex = worldX - viewport.minX;
-    const rowIndex = worldY - viewport.minY;
+    const x =
+      canvasCenterX + (worldX - viewport.center.x - 0.5) * displayCellSize;
+    const y =
+      canvasCenterY + (worldY - viewport.center.y - 0.5) * displayCellSize;
 
     if (
-      columnIndex < 0 ||
-      columnIndex >= viewport.spanX ||
-      rowIndex < 0 ||
-      rowIndex >= viewport.spanY
+      x >= renderedCanvasWidth ||
+      x + displayCellSize <= 0 ||
+      y >= renderedCanvasHeight ||
+      y + displayCellSize <= 0
     ) {
       continue;
     }
-
-    const x = gridOffsetX + columnIndex * displayCellSize;
-    const y = gridOffsetY + rowIndex * displayCellSize;
 
     context.fillRect(
       x + effectiveLiveCellInset,
@@ -568,9 +601,14 @@ function GameOfLifeSession({
   const largestViewportBaseSpanRef = useRef(
     initialGameViewState.viewportBaseSpan,
   );
+  const viewportCenterRef = useRef<ViewportCenter>(
+    initialGameViewState.viewportCenter,
+  );
   const universeRef = useRef<LifeUniverse>(
     cloneUniverse(initialGameViewState.universe),
   );
+  const activePointersRef = useRef<Map<number, PointerCoordinates>>(new Map());
+  const pinchGestureRef = useRef<PinchGesture | null>(null);
 
   const [universe, setUniverse] = useState<LifeUniverse>(() =>
     cloneUniverse(initialGameViewState.universe),
@@ -629,8 +667,8 @@ function GameOfLifeSession({
     const nextIsAutoZoomEnabled =
       options?.isAutoZoomEnabled ?? isAutoZoomEnabledRef.current;
     const nextZoomFactor = options?.zoomFactor ?? zoomFactorRef.current;
-    const nextSeedViewportCenter =
-      initialGameViewStateRef.current.viewportCenter;
+    const nextViewportCenter =
+      options?.viewportCenter ?? viewportCenterRef.current;
     const renderedCanvasWidth = Math.max(
       1,
       Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
@@ -643,7 +681,7 @@ function GameOfLifeSession({
     if (nextIsAutoZoomEnabled) {
       const currentViewport = buildViewport(
         largestViewportBaseSpanRef.current,
-        nextSeedViewportCenter,
+        nextViewportCenter,
         nextZoomFactor,
         renderedCanvasWidth,
         renderedCanvasHeight,
@@ -660,7 +698,7 @@ function GameOfLifeSession({
         const requiredBaseSpan = getRequiredViewportBaseSpan(
           nextUniverse,
           initialUniverseRef.current,
-          nextSeedViewportCenter,
+          nextViewportCenter,
           AUTO_FIT_VIEWPORT_PADDING,
           renderedCanvasWidth,
           renderedCanvasHeight,
@@ -679,20 +717,135 @@ function GameOfLifeSession({
       canvas,
       nextUniverse,
       largestViewportBaseSpanRef.current,
-      nextSeedViewportCenter,
+      nextViewportCenter,
       nextZoomFactor,
     );
   }, []);
+
+  const disableAutoZoom = useCallback(() => {
+    if (!isAutoZoomEnabledRef.current) {
+      return;
+    }
+
+    isAutoZoomEnabledRef.current = false;
+    setIsAutoZoomEnabled(false);
+  }, []);
+
+  const commitManualViewport = useCallback(
+    (
+      nextViewportCenter: ViewportCenter,
+      nextZoomFactor = zoomFactorRef.current,
+    ) => {
+      viewportCenterRef.current = nextViewportCenter;
+      disableAutoZoom();
+
+      if (zoomFactorRef.current !== nextZoomFactor) {
+        zoomFactorRef.current = nextZoomFactor;
+        setZoomFactor(nextZoomFactor);
+      }
+
+      redrawUniverse({
+        isAutoZoomEnabled: false,
+        viewportCenter: nextViewportCenter,
+        zoomFactor: nextZoomFactor,
+      });
+    },
+    [disableAutoZoom, redrawUniverse],
+  );
+
+  const panViewportByPixels = useCallback(
+    (deltaX: number, deltaY: number) => {
+      const canvas = canvasRef.current;
+
+      if (!canvas || (deltaX === 0 && deltaY === 0)) {
+        return;
+      }
+
+      const { displayCellSize } = getCanvasViewportMetrics(
+        canvas,
+        largestViewportBaseSpanRef.current,
+        viewportCenterRef.current,
+        zoomFactorRef.current,
+      );
+
+      const nextViewportCenter = {
+        x: viewportCenterRef.current.x - deltaX / displayCellSize,
+        y: viewportCenterRef.current.y - deltaY / displayCellSize,
+      };
+
+      commitManualViewport(nextViewportCenter);
+    },
+    [commitManualViewport],
+  );
+
+  const zoomViewportAtClientPoint = useCallback(
+    (clientX: number, clientY: number, zoomMultiplier: number) => {
+      const canvas = canvasRef.current;
+
+      if (!canvas || !Number.isFinite(zoomMultiplier) || zoomMultiplier <= 0) {
+        return;
+      }
+
+      const currentCanvasMetrics = getCanvasViewportMetrics(
+        canvas,
+        largestViewportBaseSpanRef.current,
+        viewportCenterRef.current,
+        zoomFactorRef.current,
+      );
+      const { worldX, worldY } = getClientPointWorldCoordinates(
+        currentCanvasMetrics,
+        clientX,
+        clientY,
+      );
+      const nextZoomFactor = clampZoomFactor(
+        zoomFactorRef.current * zoomMultiplier,
+      );
+
+      if (nextZoomFactor === zoomFactorRef.current) {
+        return;
+      }
+
+      const nextViewport = buildViewport(
+        largestViewportBaseSpanRef.current,
+        viewportCenterRef.current,
+        nextZoomFactor,
+        currentCanvasMetrics.renderedCanvasWidth,
+        currentCanvasMetrics.renderedCanvasHeight,
+      );
+      const nextDisplayCellSize = Math.min(
+        currentCanvasMetrics.renderedCanvasWidth / nextViewport.spanX,
+        currentCanvasMetrics.renderedCanvasHeight / nextViewport.spanY,
+      );
+      const localX = clientX - currentCanvasMetrics.canvasRect.left;
+      const localY = clientY - currentCanvasMetrics.canvasRect.top;
+      const nextViewportCenter = {
+        x:
+          worldX -
+          (localX - currentCanvasMetrics.renderedCanvasWidth / 2) /
+            nextDisplayCellSize,
+        y:
+          worldY -
+          (localY - currentCanvasMetrics.renderedCanvasHeight / 2) /
+            nextDisplayCellSize,
+      };
+
+      commitManualViewport(nextViewportCenter, nextZoomFactor);
+    },
+    [commitManualViewport],
+  );
 
   const restoreInitialGameView = useCallback(
     (nextInitialGameViewState = initialGameViewStateRef.current) => {
       const nextUniverse = cloneUniverse(nextInitialGameViewState.universe);
 
+      activePointersRef.current.clear();
+      pinchGestureRef.current = null;
       initialUniverseRef.current = cloneUniverse(
         nextInitialGameViewState.universe,
       );
       largestViewportBaseSpanRef.current =
         nextInitialGameViewState.viewportBaseSpan;
+      viewportCenterRef.current = nextInitialGameViewState.viewportCenter;
       universeRef.current = nextUniverse;
       setUniverse(nextUniverse);
       setIsAutoZoomEnabled(true);
@@ -706,6 +859,7 @@ function GameOfLifeSession({
       redrawUniverse({
         isAutoZoomEnabled: true,
         universe: nextUniverse,
+        viewportCenter: nextInitialGameViewState.viewportCenter,
         zoomFactor: AUTO_FIT_ZOOM_FACTOR,
       });
     },
@@ -744,31 +898,152 @@ function GameOfLifeSession({
   }, [onReset]);
 
   const handleZoomIn = useCallback(() => {
-    setIsAutoZoomEnabled(false);
-    isAutoZoomEnabledRef.current = false;
-    setZoomFactor((current) => {
-      const nextZoomFactor = current * ZOOM_STEP;
-      zoomFactorRef.current = nextZoomFactor;
-      return nextZoomFactor;
-    });
-  }, []);
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+
+    zoomViewportAtClientPoint(
+      canvasRect.left + canvasRect.width / 2,
+      canvasRect.top + canvasRect.height / 2,
+      ZOOM_STEP,
+    );
+  }, [zoomViewportAtClientPoint]);
 
   const handleZoomOut = useCallback(() => {
-    setIsAutoZoomEnabled(false);
-    isAutoZoomEnabledRef.current = false;
-    setZoomFactor((current) => {
-      const nextZoomFactor = current / ZOOM_STEP;
-      zoomFactorRef.current = nextZoomFactor;
-      return nextZoomFactor;
-    });
-  }, []);
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+
+    zoomViewportAtClientPoint(
+      canvasRect.left + canvasRect.width / 2,
+      canvasRect.top + canvasRect.height / 2,
+      1 / ZOOM_STEP,
+    );
+  }, [zoomViewportAtClientPoint]);
 
   const handleFit = useCallback(() => {
+    const nextViewportCenter = initialGameViewStateRef.current.viewportCenter;
+
+    activePointersRef.current.clear();
+    pinchGestureRef.current = null;
+    viewportCenterRef.current = nextViewportCenter;
     setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
     setIsAutoZoomEnabled(true);
     zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
     isAutoZoomEnabledRef.current = true;
-  }, []);
+    redrawUniverse({
+      isAutoZoomEnabled: true,
+      viewportCenter: nextViewportCenter,
+      zoomFactor: AUTO_FIT_ZOOM_FACTOR,
+    });
+  }, [redrawUniverse]);
+
+  const handleCanvasWheel = useCallback(
+    (event: ReactWheelEvent<HTMLCanvasElement>) => {
+      event.preventDefault();
+
+      const zoomMultiplier = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
+
+      zoomViewportAtClientPoint(event.clientX, event.clientY, zoomMultiplier);
+    },
+    [zoomViewportAtClientPoint],
+  );
+
+  const handleCanvasPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      activePointersRef.current.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
+    },
+    [],
+  );
+
+  const handleCanvasPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const previousPointer = activePointersRef.current.get(event.pointerId);
+
+      if (!previousPointer) {
+        return;
+      }
+
+      activePointersRef.current.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+
+      if (activePointersRef.current.size >= 2) {
+        const nextPinchGesture = getPinchGesture(activePointersRef.current);
+
+        if (!nextPinchGesture) {
+          pinchGestureRef.current = null;
+          return;
+        }
+
+        const previousPinchGesture = pinchGestureRef.current;
+        pinchGestureRef.current = nextPinchGesture;
+
+        if (!previousPinchGesture) {
+          return;
+        }
+
+        const deltaX = nextPinchGesture.centerX - previousPinchGesture.centerX;
+        const deltaY = nextPinchGesture.centerY - previousPinchGesture.centerY;
+
+        if (deltaX !== 0 || deltaY !== 0) {
+          panViewportByPixels(deltaX, deltaY);
+        }
+
+        if (
+          previousPinchGesture.distance > 0 &&
+          nextPinchGesture.distance > 0 &&
+          nextPinchGesture.distance !== previousPinchGesture.distance
+        ) {
+          zoomViewportAtClientPoint(
+            nextPinchGesture.centerX,
+            nextPinchGesture.centerY,
+            nextPinchGesture.distance / previousPinchGesture.distance,
+          );
+        }
+
+        return;
+      }
+
+      pinchGestureRef.current = null;
+      panViewportByPixels(
+        event.clientX - previousPointer.clientX,
+        event.clientY - previousPointer.clientY,
+      );
+    },
+    [panViewportByPixels, zoomViewportAtClientPoint],
+  );
+
+  const handleCanvasPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      activePointersRef.current.delete(event.pointerId);
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
+    },
+    [],
+  );
 
   const handleSpeedChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -968,6 +1243,8 @@ function GameOfLifeSession({
 
   useEffect(() => {
     return () => {
+      activePointersRef.current.clear();
+      pinchGestureRef.current = null;
       clearCopyFeedbackTimer();
       clearShareFeedbackTimer();
       stopSimulation();
@@ -1013,7 +1290,15 @@ function GameOfLifeSession({
         <div className="flex min-h-0 flex-1 flex-col gap-3 pb-3 sm:gap-4 sm:pb-4">
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden border-b border-cyan-300/14 bg-[#020617] p-1">
             <div className="relative h-full w-full">
-              <canvas ref={canvasRef} className="h-full w-full" />
+              <canvas
+                ref={canvasRef}
+                onPointerCancel={handleCanvasPointerUp}
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onWheel={handleCanvasWheel}
+                className="h-full w-full touch-none cursor-grab active:cursor-grabbing"
+              />
 
               <div className="absolute inset-x-2 top-2 flex items-start justify-between gap-2 sm:inset-x-4 sm:top-4 lg:justify-end">
                 <div className="flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
