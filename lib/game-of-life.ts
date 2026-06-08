@@ -8,6 +8,10 @@ export type UniverseBounds = {
   minY: number;
 };
 
+type NormalizedUniverseShape = UniverseBounds & {
+  signature: string;
+};
+
 type CellPosition = {
   x: number;
   y: number;
@@ -85,6 +89,167 @@ export function nextGeneration(universe: LifeUniverse): LifeUniverse {
   }
 
   return nextUniverse;
+}
+
+export function getAutofitUniverse(
+  universe: LifeUniverse,
+  gliderCells: LifeUniverse,
+): LifeUniverse {
+  if (gliderCells.size === 0) {
+    return universe;
+  }
+
+  const autofitUniverse = new Set<string>();
+
+  for (const cellKey of universe) {
+    if (!gliderCells.has(cellKey)) {
+      autofitUniverse.add(cellKey);
+    }
+  }
+
+  return autofitUniverse;
+}
+
+function collectConnectedComponent(
+  universe: LifeUniverse,
+  startCellKey: string,
+  visited: Set<string>,
+): LifeUniverse {
+  const component = new Set<string>();
+  const pendingCellKeys = [startCellKey];
+
+  visited.add(startCellKey);
+
+  while (pendingCellKeys.length > 0) {
+    const cellKey = pendingCellKeys.pop();
+
+    if (!cellKey) {
+      continue;
+    }
+
+    component.add(cellKey);
+
+    const { x, y } = fromCellKey(cellKey);
+
+    for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
+      for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+        if (rowOffset === 0 && columnOffset === 0) {
+          continue;
+        }
+
+        const neighborKey = toCellKey(x + columnOffset, y + rowOffset);
+
+        if (!universe.has(neighborKey) || visited.has(neighborKey)) {
+          continue;
+        }
+
+        visited.add(neighborKey);
+        pendingCellKeys.push(neighborKey);
+      }
+    }
+  }
+
+  return component;
+}
+
+function normalizeUniverseShape(
+  universe: LifeUniverse,
+): NormalizedUniverseShape | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  const coordinates: CellPosition[] = [];
+
+  for (const cellKey of universe) {
+    const { x, y } = fromCellKey(cellKey);
+
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+    coordinates.push({ x, y });
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    return null;
+  }
+
+  coordinates.sort((left, right) => left.y - right.y || left.x - right.x);
+
+  return {
+    maxX,
+    maxY,
+    minX,
+    minY,
+    signature: coordinates
+      .map(({ x, y }) => `${x - minX}:${y - minY}`)
+      .join("|"),
+  };
+}
+
+function isFreeFlyingGliderComponent(component: LifeUniverse): boolean {
+  if (component.size !== 5) {
+    return false;
+  }
+
+  const initialShape = normalizeUniverseShape(component);
+
+  if (!initialShape) {
+    return false;
+  }
+
+  const spanX = initialShape.maxX - initialShape.minX + 1;
+  const spanY = initialShape.maxY - initialShape.minY + 1;
+
+  if (spanX > 3 || spanY > 3) {
+    return false;
+  }
+
+  let nextComponent = cloneUniverse(component);
+
+  for (let generation = 0; generation < 4; generation += 1) {
+    nextComponent = nextGeneration(nextComponent);
+
+    if (nextComponent.size !== 5) {
+      return false;
+    }
+  }
+
+  const nextShape = normalizeUniverseShape(nextComponent);
+
+  if (!nextShape) {
+    return false;
+  }
+
+  return (
+    initialShape.signature === nextShape.signature &&
+    Math.abs(nextShape.minX - initialShape.minX) === 1 &&
+    Math.abs(nextShape.minY - initialShape.minY) === 1
+  );
+}
+
+export function getFreeFlyingGliderCells(universe: LifeUniverse): LifeUniverse {
+  const gliderCells = new Set<string>();
+  const visited = new Set<string>();
+
+  for (const cellKey of universe) {
+    if (visited.has(cellKey)) {
+      continue;
+    }
+
+    const component = collectConnectedComponent(universe, cellKey, visited);
+
+    if (!isFreeFlyingGliderComponent(component)) {
+      continue;
+    }
+
+    for (const gliderCellKey of component) {
+      gliderCells.add(gliderCellKey);
+    }
+  }
+
+  return gliderCells;
 }
 
 export function getUniverseBounds(
