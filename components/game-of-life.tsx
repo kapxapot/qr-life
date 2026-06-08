@@ -7,16 +7,23 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { GameOfLifeDebugPanel } from "@/components/game-of-life-debug-panel";
 import { Button } from "@/components/ui/button";
 import {
   cloneUniverse,
   countPopulation,
   createUniverseFromSeed,
+  getAutofitUniverse,
+  getFreeFlyingGliderCells,
   getUniverseBounds,
   type LifeGrid,
   type LifeUniverse,
   nextGeneration,
 } from "@/lib/game-of-life";
+import {
+  createLifeDebugSnapshot,
+  type LifeDebugSnapshot,
+} from "@/lib/game-of-life-debug";
 
 const CANVAS_CELL_SIZE = 14;
 const GRIDLINE_CELL_INSET = 1;
@@ -25,6 +32,10 @@ const GRID_INSET_START_RATIO = 0.8;
 const GRID_INSET_END_RATIO = 1.6;
 const MIN_VISIBLE_LIVE_CELL_GAP_DEVICE_PIXELS = 2;
 const LIVE_CELL_COLOR = "#67e8f9";
+const GLIDER_CELL_COLOR = "#fbbf24";
+const DEBUG_AUTOFIT_BOUNDS_COLOR = "#f43f5e";
+const DEBUG_UNIVERSE_BOUNDS_COLOR = "#22c55e";
+const DEBUG_AUTOFIT_EDGE_COLOR = "#f8fafc";
 const MIN_VIEWPORT_SPAN = 41;
 const INITIAL_VIEWPORT_PADDING = 6;
 const AUTO_FIT_VIEWPORT_PADDING = 5;
@@ -44,6 +55,7 @@ const TICK_DELAY_STORAGE_KEY = "qr-life:game-of-life:tick-delay-ms";
 const RESIZE_REDRAW_DEBOUNCE_MS = 80;
 
 type Props = {
+  debug?: boolean;
   onScanAnother: () => void;
   qrValue: string | null;
   seed: LifeGrid;
@@ -69,6 +81,7 @@ type ViewportCenter = {
 };
 
 type RedrawOptions = {
+  gliderCells?: LifeUniverse;
   isAutoZoomEnabled?: boolean;
   universe?: LifeUniverse;
   viewportCenter?: ViewportCenter;
@@ -76,6 +89,7 @@ type RedrawOptions = {
 };
 
 type InitialGameViewState = {
+  gliderCells: LifeUniverse;
   population: number;
   universe: LifeUniverse;
   viewportBaseSpan: number;
@@ -163,15 +177,18 @@ function getInitialViewportBaseSpan(viewportBaseSpan: number) {
 
 function createInitialGameViewState(seed: LifeGrid): InitialGameViewState {
   const universe = createUniverseFromSeed(seed);
+  const gliderCells = getFreeFlyingGliderCells(universe);
+  const autofitUniverse = getAutofitUniverse(universe, gliderCells);
   const viewportCenter = getSeedViewportCenter(seed);
   const viewportBaseSpan = getViewportBaseSpan(
-    universe,
+    autofitUniverse.size > 0 ? autofitUniverse : universe,
     universe,
     viewportCenter,
     INITIAL_VIEWPORT_PADDING,
   );
 
   return {
+    gliderCells,
     population: countPopulation(universe),
     universe,
     viewportBaseSpan: getInitialViewportBaseSpan(viewportBaseSpan),
@@ -472,6 +489,8 @@ function getPinchGesture(
 function drawUniverse(
   canvas: HTMLCanvasElement,
   universe: LifeUniverse,
+  gliderCells: LifeUniverse,
+  debugSnapshot: LifeDebugSnapshot | null,
   viewportBaseSpan: number,
   center: ViewportCenter,
   zoomFactor: number,
@@ -556,7 +575,76 @@ function drawUniverse(
 
   context.fillStyle = LIVE_CELL_COLOR;
 
+  const drawCell = (cellKey: string) => {
+    const { x: worldX, y: worldY } = parseCellKey(cellKey);
+    const x =
+      canvasCenterX + (worldX - viewport.center.x - 0.5) * displayCellSize;
+    const y =
+      canvasCenterY + (worldY - viewport.center.y - 0.5) * displayCellSize;
+
+    if (
+      x >= renderedCanvasWidth ||
+      x + displayCellSize <= 0 ||
+      y >= renderedCanvasHeight ||
+      y + displayCellSize <= 0
+    ) {
+      return;
+    }
+
+    context.fillRect(
+      x + effectiveLiveCellInset,
+      y + effectiveLiveCellInset,
+      Math.max(0, displayCellSize - effectiveLiveCellInset * 2),
+      Math.max(0, displayCellSize - effectiveLiveCellInset * 2),
+    );
+  };
+
   for (const cellKey of universe) {
+    drawCell(cellKey);
+  }
+
+  if (gliderCells.size > 0) {
+    context.fillStyle = GLIDER_CELL_COLOR;
+
+    for (const cellKey of gliderCells) {
+      drawCell(cellKey);
+    }
+  }
+
+  if (!debugSnapshot) {
+    return;
+  }
+
+  const drawBounds = (
+    bounds: LifeDebugSnapshot["universeBounds"],
+    color: string,
+  ) => {
+    if (!bounds) {
+      return;
+    }
+
+    const x =
+      canvasCenterX + (bounds.minX - viewport.center.x - 0.5) * displayCellSize;
+    const y =
+      canvasCenterY + (bounds.minY - viewport.center.y - 0.5) * displayCellSize;
+    const width = (bounds.maxX - bounds.minX + 1) * displayCellSize;
+    const height = (bounds.maxY - bounds.minY + 1) * displayCellSize;
+
+    context.save();
+    context.strokeStyle = color;
+    context.lineWidth = Math.max(1, displayCellSize * 0.14);
+    context.strokeRect(x, y, width, height);
+    context.restore();
+  };
+
+  drawBounds(debugSnapshot.universeBounds, DEBUG_UNIVERSE_BOUNDS_COLOR);
+  drawBounds(debugSnapshot.autofitBounds, DEBUG_AUTOFIT_BOUNDS_COLOR);
+
+  context.save();
+  context.strokeStyle = DEBUG_AUTOFIT_EDGE_COLOR;
+  context.lineWidth = Math.max(1, displayCellSize * 0.14);
+
+  for (const cellKey of debugSnapshot.autofitEdgeCells) {
     const { x: worldX, y: worldY } = parseCellKey(cellKey);
     const x =
       canvasCenterX + (worldX - viewport.center.x - 0.5) * displayCellSize;
@@ -572,16 +660,19 @@ function drawUniverse(
       continue;
     }
 
-    context.fillRect(
-      x + effectiveLiveCellInset,
-      y + effectiveLiveCellInset,
-      Math.max(0, displayCellSize - effectiveLiveCellInset * 2),
-      Math.max(0, displayCellSize - effectiveLiveCellInset * 2),
+    context.strokeRect(
+      x + effectiveLiveCellInset / 2,
+      y + effectiveLiveCellInset / 2,
+      Math.max(0, displayCellSize - effectiveLiveCellInset),
+      Math.max(0, displayCellSize - effectiveLiveCellInset),
     );
   }
+
+  context.restore();
 }
 
 function GameOfLifeSession({
+  debug = false,
   onReset,
   onScanAnother,
   qrValue,
@@ -595,9 +686,6 @@ function GameOfLifeSession({
   const resizeFrameRef = useRef<number | null>(null);
   const simulationTimerRef = useRef<number | null>(null);
   const initialGameViewStateRef = useRef(initialGameViewState);
-  const initialUniverseRef = useRef<LifeUniverse>(
-    cloneUniverse(initialGameViewState.universe),
-  );
   const largestViewportBaseSpanRef = useRef(
     initialGameViewState.viewportBaseSpan,
   );
@@ -607,11 +695,17 @@ function GameOfLifeSession({
   const universeRef = useRef<LifeUniverse>(
     cloneUniverse(initialGameViewState.universe),
   );
+  const gliderCellsRef = useRef<LifeUniverse>(
+    cloneUniverse(initialGameViewState.gliderCells),
+  );
   const activePointersRef = useRef<Map<number, PointerCoordinates>>(new Map());
   const pinchGestureRef = useRef<PinchGesture | null>(null);
 
   const [universe, setUniverse] = useState<LifeUniverse>(() =>
     cloneUniverse(initialGameViewState.universe),
+  );
+  const [gliderCells, setGliderCells] = useState<LifeUniverse>(() =>
+    cloneUniverse(initialGameViewState.gliderCells),
   );
   const [generation, setGeneration] = useState(0);
   const [population, setPopulation] = useState(
@@ -656,71 +750,96 @@ function GameOfLifeSession({
     }
   }, []);
 
-  const redrawUniverse = useCallback((options?: RedrawOptions) => {
-    const canvas = canvasRef.current;
+  const redrawUniverse = useCallback(
+    (options?: RedrawOptions) => {
+      const canvas = canvasRef.current;
 
-    if (!canvas) {
-      return;
-    }
+      if (!canvas) {
+        return;
+      }
 
-    const nextUniverse = options?.universe ?? universeRef.current;
-    const nextIsAutoZoomEnabled =
-      options?.isAutoZoomEnabled ?? isAutoZoomEnabledRef.current;
-    const nextZoomFactor = options?.zoomFactor ?? zoomFactorRef.current;
-    const nextViewportCenter =
-      options?.viewportCenter ?? viewportCenterRef.current;
-    const renderedCanvasWidth = Math.max(
-      1,
-      Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
-    );
-    const renderedCanvasHeight = Math.max(
-      1,
-      Math.floor(canvas.clientHeight || canvas.getBoundingClientRect().height),
-    );
-
-    if (nextIsAutoZoomEnabled) {
-      const currentViewport = buildViewport(
-        largestViewportBaseSpanRef.current,
-        nextViewportCenter,
-        nextZoomFactor,
-        renderedCanvasWidth,
-        renderedCanvasHeight,
+      const nextUniverse = options?.universe ?? universeRef.current;
+      const nextGliderCells = options?.gliderCells ?? gliderCellsRef.current;
+      const nextAutofitUniverse = getAutofitUniverse(
+        nextUniverse,
+        nextGliderCells,
       );
+      const nextIsAutoZoomEnabled =
+        options?.isAutoZoomEnabled ?? isAutoZoomEnabledRef.current;
+      const nextZoomFactor = options?.zoomFactor ?? zoomFactorRef.current;
+      const nextViewportCenter =
+        options?.viewportCenter ?? viewportCenterRef.current;
+      const renderedCanvasWidth = Math.max(
+        1,
+        Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
+      );
+      const renderedCanvasHeight = Math.max(
+        1,
+        Math.floor(
+          canvas.clientHeight || canvas.getBoundingClientRect().height,
+        ),
+      );
+      const nextAutofitTargetSpan =
+        nextAutofitUniverse.size > 0
+          ? getRequiredViewportBaseSpan(
+              nextAutofitUniverse,
+              nextAutofitUniverse,
+              nextViewportCenter,
+              AUTO_FIT_VIEWPORT_PADDING,
+              renderedCanvasWidth,
+              renderedCanvasHeight,
+            )
+          : null;
 
-      if (
-        !doesUniverseFitViewport(
-          nextUniverse,
-          initialUniverseRef.current,
-          currentViewport,
-          AUTO_FIT_VIEWPORT_PADDING,
-        )
-      ) {
-        const requiredBaseSpan = getRequiredViewportBaseSpan(
-          nextUniverse,
-          initialUniverseRef.current,
+      if (nextIsAutoZoomEnabled && nextAutofitUniverse.size > 0) {
+        const currentViewport = buildViewport(
+          largestViewportBaseSpanRef.current,
           nextViewportCenter,
-          AUTO_FIT_VIEWPORT_PADDING,
+          nextZoomFactor,
           renderedCanvasWidth,
           renderedCanvasHeight,
         );
 
-        if (requiredBaseSpan > largestViewportBaseSpanRef.current) {
-          largestViewportBaseSpanRef.current = Math.min(
-            requiredBaseSpan,
-            largestViewportBaseSpanRef.current + 1,
-          );
+        if (
+          !doesUniverseFitViewport(
+            nextAutofitUniverse,
+            nextAutofitUniverse,
+            currentViewport,
+            AUTO_FIT_VIEWPORT_PADDING,
+          )
+        ) {
+          if (
+            nextAutofitTargetSpan !== null &&
+            nextAutofitTargetSpan > largestViewportBaseSpanRef.current
+          ) {
+            largestViewportBaseSpanRef.current = Math.min(
+              nextAutofitTargetSpan,
+              largestViewportBaseSpanRef.current + 1,
+            );
+          }
         }
       }
-    }
+      const nextDebugSnapshot = debug
+        ? createLifeDebugSnapshot({
+            autofitTargetSpan: nextAutofitTargetSpan,
+            gliderCells: nextGliderCells,
+            universe: nextUniverse,
+            viewportBaseSpan: largestViewportBaseSpanRef.current,
+          })
+        : null;
 
-    drawUniverse(
-      canvas,
-      nextUniverse,
-      largestViewportBaseSpanRef.current,
-      nextViewportCenter,
-      nextZoomFactor,
-    );
-  }, []);
+      drawUniverse(
+        canvas,
+        nextUniverse,
+        nextGliderCells,
+        nextDebugSnapshot,
+        largestViewportBaseSpanRef.current,
+        nextViewportCenter,
+        nextZoomFactor,
+      );
+    },
+    [debug],
+  );
 
   const disableAutoZoom = useCallback(() => {
     if (!isAutoZoomEnabledRef.current) {
@@ -840,14 +959,15 @@ function GameOfLifeSession({
 
       activePointersRef.current.clear();
       pinchGestureRef.current = null;
-      initialUniverseRef.current = cloneUniverse(
-        nextInitialGameViewState.universe,
-      );
       largestViewportBaseSpanRef.current =
         nextInitialGameViewState.viewportBaseSpan;
       viewportCenterRef.current = nextInitialGameViewState.viewportCenter;
       universeRef.current = nextUniverse;
+      gliderCellsRef.current = cloneUniverse(
+        nextInitialGameViewState.gliderCells,
+      );
       setUniverse(nextUniverse);
+      setGliderCells(cloneUniverse(nextInitialGameViewState.gliderCells));
       setIsAutoZoomEnabled(true);
       isAutoZoomEnabledRef.current = true;
       setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
@@ -868,10 +988,13 @@ function GameOfLifeSession({
 
   const advanceLife = useCallback(() => {
     const nextUniverse = nextGeneration(universeRef.current);
+    const nextGliderCells = getFreeFlyingGliderCells(nextUniverse);
     const nextPopulation = countPopulation(nextUniverse);
 
     universeRef.current = nextUniverse;
+    gliderCellsRef.current = nextGliderCells;
     setUniverse(nextUniverse);
+    setGliderCells(nextGliderCells);
     setGeneration((value) => value + 1);
     setPopulation(nextPopulation);
 
@@ -931,6 +1054,11 @@ function GameOfLifeSession({
 
   const handleFit = useCallback(() => {
     const nextViewportCenter = initialGameViewStateRef.current.viewportCenter;
+    const canvas = canvasRef.current;
+    const nextAutofitUniverse = getAutofitUniverse(
+      universeRef.current,
+      gliderCellsRef.current,
+    );
 
     activePointersRef.current.clear();
     pinchGestureRef.current = null;
@@ -939,6 +1067,32 @@ function GameOfLifeSession({
     setIsAutoZoomEnabled(true);
     zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
     isAutoZoomEnabledRef.current = true;
+
+    if (canvas) {
+      const renderedCanvasWidth = Math.max(
+        1,
+        Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
+      );
+      const renderedCanvasHeight = Math.max(
+        1,
+        Math.floor(
+          canvas.clientHeight || canvas.getBoundingClientRect().height,
+        ),
+      );
+
+      largestViewportBaseSpanRef.current =
+        nextAutofitUniverse.size > 0
+          ? getRequiredViewportBaseSpan(
+              nextAutofitUniverse,
+              nextAutofitUniverse,
+              nextViewportCenter,
+              AUTO_FIT_VIEWPORT_PADDING,
+              renderedCanvasWidth,
+              renderedCanvasHeight,
+            )
+          : initialGameViewStateRef.current.viewportBaseSpan;
+    }
+
     redrawUniverse({
       isAutoZoomEnabled: true,
       viewportCenter: nextViewportCenter,
@@ -1173,11 +1327,12 @@ function GameOfLifeSession({
 
   useEffect(() => {
     redrawUniverse({
+      gliderCells,
       isAutoZoomEnabled,
       universe,
       zoomFactor,
     });
-  }, [isAutoZoomEnabled, redrawUniverse, universe, zoomFactor]);
+  }, [gliderCells, isAutoZoomEnabled, redrawUniverse, universe, zoomFactor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1283,6 +1438,43 @@ function GameOfLifeSession({
     : hasStartedOnce
       ? "Resume"
       : "Start";
+  const currentGliderCells = gliderCells;
+  const currentAutofitUniverse = getAutofitUniverse(
+    universe,
+    currentGliderCells,
+  );
+  const debugCanvas = canvasRef.current;
+  const currentAutofitTargetSpan =
+    debugCanvas && currentAutofitUniverse.size > 0
+      ? getRequiredViewportBaseSpan(
+          currentAutofitUniverse,
+          currentAutofitUniverse,
+          viewportCenterRef.current,
+          AUTO_FIT_VIEWPORT_PADDING,
+          Math.max(
+            1,
+            Math.floor(
+              debugCanvas.clientWidth ||
+                debugCanvas.getBoundingClientRect().width,
+            ),
+          ),
+          Math.max(
+            1,
+            Math.floor(
+              debugCanvas.clientHeight ||
+                debugCanvas.getBoundingClientRect().height,
+            ),
+          ),
+        )
+      : null;
+  const currentDebugSnapshot = debug
+    ? createLifeDebugSnapshot({
+        autofitTargetSpan: currentAutofitTargetSpan,
+        gliderCells: currentGliderCells,
+        universe,
+        viewportBaseSpan: largestViewportBaseSpanRef.current,
+      })
+    : null;
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -1301,6 +1493,10 @@ function GameOfLifeSession({
               />
 
               <div className="absolute inset-x-2 top-2 flex items-start justify-between gap-2 sm:inset-x-4 sm:top-4 lg:justify-end">
+                {debug && currentDebugSnapshot && (
+                  <GameOfLifeDebugPanel debugSnapshot={currentDebugSnapshot} />
+                )}
+
                 <div className="flex flex-col items-center gap-0.5 rounded-xl border border-white/12 bg-slate-950 px-2.5 pt-2 pb-1 sm:flex-row sm:items-baseline sm:gap-2 sm:rounded-full sm:px-3 sm:py-1">
                   <span className="text-[0.6rem] font-medium uppercase tracking-[0.24em] text-slate-200/80 sm:text-xs lg:text-sm">
                     Gen
@@ -1442,11 +1638,17 @@ function GameOfLifeSession({
   );
 }
 
-export function GameOfLife({ onScanAnother, qrValue, seed }: Props) {
+export function GameOfLife({
+  debug = false,
+  onScanAnother,
+  qrValue,
+  seed,
+}: Props) {
   const [sessionKey, setSessionKey] = useState(0);
 
   return (
     <GameOfLifeSession
+      debug={debug}
       key={sessionKey}
       onReset={() => {
         setSessionKey((current) => current + 1);

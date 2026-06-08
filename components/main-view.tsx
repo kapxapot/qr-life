@@ -90,6 +90,7 @@ export function MainView() {
   const [invalidShareMessage, setInvalidShareMessage] = useState<string | null>(
     null,
   );
+  const [gameDebugEnabled, setGameDebugEnabled] = useState(false);
   const [scannerDebugEnabled, setScannerDebugEnabled] = useState(false);
   const [hasResolvedInitialShareLink, setHasResolvedInitialShareLink] =
     useState(false);
@@ -103,6 +104,9 @@ export function MainView() {
     const nextSharedScan = parseSharedScanFromSearch(window.location.search);
     const debugMode = new URLSearchParams(window.location.search).get("debug");
 
+    setGameDebugEnabled(
+      debugMode === "1" || debugMode === "game" || debugMode === "life",
+    );
     setScannerDebugEnabled(debugMode === "1" || debugMode === "qr");
 
     if (nextSharedScan.scanResult) {
@@ -145,6 +149,7 @@ export function MainView() {
     return (
       <section className="relative h-full w-full overflow-hidden">
         <GameOfLife
+          debug={gameDebugEnabled}
           onScanAnother={() => {
             setShouldAutoStartScanner(true);
             setScanResult(null);
