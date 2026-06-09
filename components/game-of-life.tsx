@@ -19,11 +19,18 @@ import {
   type LifeGrid,
   type LifeUniverse,
   nextGeneration,
+  type UniverseBounds,
 } from "@/lib/game-of-life";
 import {
   createLifeDebugSnapshot,
   type LifeDebugSnapshot,
 } from "@/lib/game-of-life-debug";
+import {
+  getRequiredViewportBaseSpanForBounds,
+  getViewportCenterForBounds,
+  getViewportSpans,
+  normalizeViewportSpanForAxis,
+} from "@/lib/game-of-life-viewport";
 
 const CANVAS_CELL_SIZE = 14;
 const GRIDLINE_CELL_INSET = 1;
@@ -243,10 +250,6 @@ function parseCellKey(key: string): ViewportCenter {
   };
 }
 
-function normalizeViewportSpanForAxis(span: number): number {
-  return Math.max(1, Math.ceil(span));
-}
-
 function normalizeSquareViewportSpan(span: number): number {
   return normalizeViewportSpanForAxis(span);
 }
@@ -255,7 +258,7 @@ function getPaddedUniverseBounds(
   universe: LifeUniverse,
   fallbackUniverse: LifeUniverse,
   viewportPadding: number,
-) {
+): UniverseBounds | null {
   const boundsSource = universe.size > 0 ? universe : fallbackUniverse;
   const bounds = getUniverseBounds(boundsSource);
 
@@ -302,7 +305,6 @@ function getViewportBaseSpan(
 function getRequiredViewportBaseSpan(
   universe: LifeUniverse,
   fallbackUniverse: LifeUniverse,
-  center: ViewportCenter,
   viewportPadding: number,
   renderedCanvasWidth: number,
   renderedCanvasHeight: number,
@@ -317,71 +319,27 @@ function getRequiredViewportBaseSpan(
     return normalizeSquareViewportSpan(MIN_VIEWPORT_SPAN);
   }
 
-  const requiredSpanX = normalizeViewportSpanForAxis(
-    Math.max(
-      MIN_VIEWPORT_SPAN,
-      Math.ceil(
-        Math.max(
-          Math.abs(center.x - paddedBounds.minX),
-          Math.abs(paddedBounds.maxX - center.x),
-        ) *
-          2 +
-          1,
-      ),
-    ),
-  );
-  const requiredSpanY = normalizeViewportSpanForAxis(
-    Math.max(
-      MIN_VIEWPORT_SPAN,
-      Math.ceil(
-        Math.max(
-          Math.abs(center.y - paddedBounds.minY),
-          Math.abs(paddedBounds.maxY - center.y),
-        ) *
-          2 +
-          1,
-      ),
-    ),
-  );
-
-  if (renderedCanvasWidth >= renderedCanvasHeight) {
-    return normalizeViewportSpanForAxis(
-      Math.max(
-        requiredSpanY,
-        (requiredSpanX * renderedCanvasHeight) / renderedCanvasWidth,
-      ),
-    );
-  }
-
-  return normalizeViewportSpanForAxis(
-    Math.max(
-      requiredSpanX,
-      (requiredSpanY * renderedCanvasWidth) / renderedCanvasHeight,
-    ),
+  return getRequiredViewportBaseSpanForBounds(
+    paddedBounds,
+    renderedCanvasWidth,
+    renderedCanvasHeight,
+    MIN_VIEWPORT_SPAN,
   );
 }
 
-function doesUniverseFitViewport(
-  universe: LifeUniverse,
-  fallbackUniverse: LifeUniverse,
+function doesBoundsFitViewport(
+  bounds: UniverseBounds | null,
   viewport: Viewport,
-  viewportPadding: number,
 ) {
-  const paddedBounds = getPaddedUniverseBounds(
-    universe,
-    fallbackUniverse,
-    viewportPadding,
-  );
-
-  if (!paddedBounds) {
+  if (!bounds) {
     return true;
   }
 
   return (
-    paddedBounds.minX >= viewport.minX &&
-    paddedBounds.maxX <= viewport.maxX &&
-    paddedBounds.minY >= viewport.minY &&
-    paddedBounds.maxY <= viewport.maxY
+    bounds.minX >= viewport.minX &&
+    bounds.maxX <= viewport.maxX &&
+    bounds.minY >= viewport.minY &&
+    bounds.maxY <= viewport.maxY
   );
 }
 
@@ -392,23 +350,37 @@ function buildViewport(
   renderedCanvasWidth: number,
   renderedCanvasHeight: number,
 ): Viewport {
-  const nextBaseSpan = Math.max(1, baseSpan / zoomFactor);
-
-  if (renderedCanvasWidth >= renderedCanvasHeight) {
-    const spanY = normalizeViewportSpanForAxis(nextBaseSpan);
-    const spanX = normalizeViewportSpanForAxis(
-      (spanY * renderedCanvasWidth) / renderedCanvasHeight,
-    );
-
-    return createViewport(center, spanX, spanY);
-  }
-
-  const spanX = normalizeViewportSpanForAxis(nextBaseSpan);
-  const spanY = normalizeViewportSpanForAxis(
-    (spanX * renderedCanvasHeight) / renderedCanvasWidth,
+  const { spanX, spanY } = getViewportSpans(
+    baseSpan,
+    zoomFactor,
+    renderedCanvasWidth,
+    renderedCanvasHeight,
   );
 
   return createViewport(center, spanX, spanY);
+}
+
+function getAutofitViewportCenter(
+  currentViewport: Viewport,
+  bounds: UniverseBounds,
+  baseSpan: number,
+  zoomFactor: number,
+  renderedCanvasWidth: number,
+  renderedCanvasHeight: number,
+) {
+  const { spanX, spanY } = getViewportSpans(
+    baseSpan,
+    zoomFactor,
+    renderedCanvasWidth,
+    renderedCanvasHeight,
+  );
+
+  return getViewportCenterForBounds(
+    currentViewport.center,
+    bounds,
+    spanX,
+    spanY,
+  );
 }
 
 function getCanvasViewportMetrics(
@@ -767,8 +739,9 @@ function GameOfLifeSession({
       const nextIsAutoZoomEnabled =
         options?.isAutoZoomEnabled ?? isAutoZoomEnabledRef.current;
       const nextZoomFactor = options?.zoomFactor ?? zoomFactorRef.current;
-      const nextViewportCenter =
+      let nextViewportCenter =
         options?.viewportCenter ?? viewportCenterRef.current;
+      let nextViewportBaseSpan = largestViewportBaseSpanRef.current;
       const renderedCanvasWidth = Math.max(
         1,
         Math.floor(canvas.clientWidth || canvas.getBoundingClientRect().width),
@@ -779,44 +752,52 @@ function GameOfLifeSession({
           canvas.clientHeight || canvas.getBoundingClientRect().height,
         ),
       );
-      const nextAutofitTargetSpan =
-        nextAutofitUniverse.size > 0
-          ? getRequiredViewportBaseSpan(
-              nextAutofitUniverse,
-              nextAutofitUniverse,
-              nextViewportCenter,
-              AUTO_FIT_VIEWPORT_PADDING,
-              renderedCanvasWidth,
-              renderedCanvasHeight,
-            )
-          : null;
+      const nextAutofitBounds = getPaddedUniverseBounds(
+        nextAutofitUniverse,
+        nextAutofitUniverse,
+        AUTO_FIT_VIEWPORT_PADDING,
+      );
+      const nextAutofitTargetSpan = nextAutofitBounds
+        ? getRequiredViewportBaseSpan(
+            nextAutofitUniverse,
+            nextAutofitUniverse,
+            AUTO_FIT_VIEWPORT_PADDING,
+            renderedCanvasWidth,
+            renderedCanvasHeight,
+          )
+        : null;
 
-      if (nextIsAutoZoomEnabled && nextAutofitUniverse.size > 0) {
+      if (nextIsAutoZoomEnabled && nextAutofitBounds) {
         const currentViewport = buildViewport(
-          largestViewportBaseSpanRef.current,
+          nextViewportBaseSpan,
           nextViewportCenter,
           nextZoomFactor,
           renderedCanvasWidth,
           renderedCanvasHeight,
         );
 
-        if (
-          !doesUniverseFitViewport(
-            nextAutofitUniverse,
-            nextAutofitUniverse,
-            currentViewport,
-            AUTO_FIT_VIEWPORT_PADDING,
-          )
-        ) {
+        if (!doesBoundsFitViewport(nextAutofitBounds, currentViewport)) {
           if (
             nextAutofitTargetSpan !== null &&
-            nextAutofitTargetSpan > largestViewportBaseSpanRef.current
+            nextAutofitTargetSpan > nextViewportBaseSpan
           ) {
-            largestViewportBaseSpanRef.current = Math.min(
+            nextViewportBaseSpan = Math.min(
               nextAutofitTargetSpan,
-              largestViewportBaseSpanRef.current + 1,
+              nextViewportBaseSpan + 1,
             );
           }
+
+          nextViewportCenter = getAutofitViewportCenter(
+            currentViewport,
+            nextAutofitBounds,
+            nextViewportBaseSpan,
+            nextZoomFactor,
+            renderedCanvasWidth,
+            renderedCanvasHeight,
+          );
+
+          largestViewportBaseSpanRef.current = nextViewportBaseSpan;
+          viewportCenterRef.current = nextViewportCenter;
         }
       }
       const nextDebugSnapshot = debug
@@ -824,7 +805,7 @@ function GameOfLifeSession({
             autofitTargetSpan: nextAutofitTargetSpan,
             gliderCells: nextGliderCells,
             universe: nextUniverse,
-            viewportBaseSpan: largestViewportBaseSpanRef.current,
+            viewportBaseSpan: nextViewportBaseSpan,
           })
         : null;
 
@@ -833,7 +814,7 @@ function GameOfLifeSession({
         nextUniverse,
         nextGliderCells,
         nextDebugSnapshot,
-        largestViewportBaseSpanRef.current,
+        nextViewportBaseSpan,
         nextViewportCenter,
         nextZoomFactor,
       );
@@ -1053,20 +1034,13 @@ function GameOfLifeSession({
   }, [zoomViewportAtClientPoint]);
 
   const handleFit = useCallback(() => {
-    const nextViewportCenter = initialGameViewStateRef.current.viewportCenter;
     const canvas = canvasRef.current;
     const nextAutofitUniverse = getAutofitUniverse(
       universeRef.current,
       gliderCellsRef.current,
     );
-
-    activePointersRef.current.clear();
-    pinchGestureRef.current = null;
-    viewportCenterRef.current = nextViewportCenter;
-    setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
-    setIsAutoZoomEnabled(true);
-    zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
-    isAutoZoomEnabledRef.current = true;
+    let nextViewportCenter = initialGameViewStateRef.current.viewportCenter;
+    let nextViewportBaseSpan = initialGameViewStateRef.current.viewportBaseSpan;
 
     if (canvas) {
       const renderedCanvasWidth = Math.max(
@@ -1079,19 +1053,46 @@ function GameOfLifeSession({
           canvas.clientHeight || canvas.getBoundingClientRect().height,
         ),
       );
+      const currentViewport = buildViewport(
+        largestViewportBaseSpanRef.current,
+        viewportCenterRef.current,
+        zoomFactorRef.current,
+        renderedCanvasWidth,
+        renderedCanvasHeight,
+      );
+      const nextAutofitBounds = getPaddedUniverseBounds(
+        nextAutofitUniverse,
+        nextAutofitUniverse,
+        AUTO_FIT_VIEWPORT_PADDING,
+      );
 
-      largestViewportBaseSpanRef.current =
-        nextAutofitUniverse.size > 0
-          ? getRequiredViewportBaseSpan(
-              nextAutofitUniverse,
-              nextAutofitUniverse,
-              nextViewportCenter,
-              AUTO_FIT_VIEWPORT_PADDING,
-              renderedCanvasWidth,
-              renderedCanvasHeight,
-            )
-          : initialGameViewStateRef.current.viewportBaseSpan;
+      if (nextAutofitBounds) {
+        nextViewportBaseSpan = getRequiredViewportBaseSpan(
+          nextAutofitUniverse,
+          nextAutofitUniverse,
+          AUTO_FIT_VIEWPORT_PADDING,
+          renderedCanvasWidth,
+          renderedCanvasHeight,
+        );
+        nextViewportCenter = getAutofitViewportCenter(
+          currentViewport,
+          nextAutofitBounds,
+          nextViewportBaseSpan,
+          AUTO_FIT_ZOOM_FACTOR,
+          renderedCanvasWidth,
+          renderedCanvasHeight,
+        );
+      }
     }
+
+    activePointersRef.current.clear();
+    pinchGestureRef.current = null;
+    viewportCenterRef.current = nextViewportCenter;
+    largestViewportBaseSpanRef.current = nextViewportBaseSpan;
+    setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
+    setIsAutoZoomEnabled(true);
+    zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
+    isAutoZoomEnabledRef.current = true;
 
     redrawUniverse({
       isAutoZoomEnabled: true,
@@ -1449,7 +1450,6 @@ function GameOfLifeSession({
       ? getRequiredViewportBaseSpan(
           currentAutofitUniverse,
           currentAutofitUniverse,
-          viewportCenterRef.current,
           AUTO_FIT_VIEWPORT_PADDING,
           Math.max(
             1,
