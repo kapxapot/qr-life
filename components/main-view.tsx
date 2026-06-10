@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { GameOfLife } from "@/components/game-of-life";
+import { QrGeneratorLauncher } from "@/components/qr-generator-launcher";
 import { QrScanner } from "@/components/qr-scanner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { LifeGrid } from "@/lib/game-of-life";
 import { decodeSharedQrSeed, encodeSharedQrSeed } from "@/lib/qr-share";
 
@@ -84,9 +93,58 @@ function parseSharedScanFromSearch(search: string): SharedScanParseResult {
   }
 }
 
+function InvalidShareDialog({
+  message,
+  onClose,
+}: {
+  message: string | null;
+  onClose: () => void;
+}) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent
+        className="border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.98),rgba(5,10,20,0.98)] p-6 text-white shadow-[0_24px_80px_-40px_rgba(34,211,238,0.55)] sm:max-w-md"
+        showCloseButton
+      >
+        <DialogHeader className="gap-3">
+          <DialogTitle className="text-lg tracking-tight text-white">
+            Shared link unavailable
+          </DialogTitle>
+          <DialogDescription className="text-sm leading-6 text-slate-300">
+            {message}
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogFooter className="mt-2 border-cyan-300/10 bg-slate-950/50 p-3">
+          <Button
+            type="button"
+            onClick={onClose}
+            variant="aurora"
+            className="h-auto px-5 py-2.5 text-sm font-semibold"
+          >
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function MainView() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [shouldAutoStartScanner, setShouldAutoStartScanner] = useState(false);
+  const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [invalidShareMessage, setInvalidShareMessage] = useState<string | null>(
     null,
   );
@@ -157,50 +215,37 @@ export function MainView() {
           qrValue={scanResult.qrValue}
           seed={scanResult.seed}
         />
-
-        {invalidShareMessage && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="invalid-share-title"
-              className="w-full max-w-md rounded-[1.75rem] border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.98),rgba(5,10,20,0.98)] p-6 shadow-[0_24px_80px_-40px_rgba(34,211,238,0.55)]"
-            >
-              <h2
-                id="invalid-share-title"
-                className="text-lg font-semibold tracking-tight text-white"
-              >
-                Shared link unavailable
-              </h2>
-
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                {invalidShareMessage}
-              </p>
-
-              <div className="mt-5 flex justify-end">
-                <Button
-                  type="button"
-                  onClick={() => setInvalidShareMessage(null)}
-                  variant="aurora"
-                  className="h-auto px-5 py-2.5 text-sm font-semibold"
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        <InvalidShareDialog
+          message={invalidShareMessage}
+          onClose={() => setInvalidShareMessage(null)}
+        />
       </section>
     );
   }
 
   return (
     <section className="flex h-full w-full items-center justify-center">
-      <div className="relative w-[95vmin] rounded-[2rem] shadow-[0_0_15px_0_rgba(34,211,238,0.45)] sm:w-[80vmin]">
-        <QrScanner
-          autoStart={shouldAutoStartScanner}
-          debug={scannerDebugEnabled}
-          onScan={(seed, qrValue) => {
+      <div className="flex flex-col items-center gap-4 lg:gap-6">
+        {!isGeneratorOpen && (
+          <div className="relative w-[95vmin] rounded-[2rem] shadow-[0_0_15px_0_rgba(34,211,238,0.45)] sm:w-[80vmin]">
+            <QrScanner
+              autoStart={shouldAutoStartScanner}
+              debug={scannerDebugEnabled}
+              isPaused={isGeneratorOpen}
+              onScan={(seed, qrValue) => {
+                setShouldAutoStartScanner(false);
+                setScanResult({
+                  encodedQr: encodeSharedQrSeed(seed),
+                  qrValue,
+                  seed,
+                });
+              }}
+            />
+          </div>
+        )}
+
+        <QrGeneratorLauncher
+          onGenerate={(seed, qrValue) => {
             setShouldAutoStartScanner(false);
             setScanResult({
               encodedQr: encodeSharedQrSeed(seed),
@@ -208,40 +253,13 @@ export function MainView() {
               seed,
             });
           }}
+          onOpenChange={setIsGeneratorOpen}
         />
 
-        {invalidShareMessage && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-[2rem] bg-slate-950/70 p-4 backdrop-blur-sm">
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="invalid-share-title"
-              className="w-full max-w-md rounded-[1.75rem] border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.98),rgba(5,10,20,0.98)] p-6 shadow-[0_24px_80px_-40px_rgba(34,211,238,0.55)]"
-            >
-              <h2
-                id="invalid-share-title"
-                className="text-lg font-semibold tracking-tight text-white"
-              >
-                Shared link unavailable
-              </h2>
-
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                {invalidShareMessage}
-              </p>
-
-              <div className="mt-5 flex justify-end">
-                <Button
-                  type="button"
-                  onClick={() => setInvalidShareMessage(null)}
-                  variant="aurora"
-                  className="h-auto px-5 py-2.5 text-sm font-semibold"
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        <InvalidShareDialog
+          message={invalidShareMessage}
+          onClose={() => setInvalidShareMessage(null)}
+        />
       </div>
     </section>
   );

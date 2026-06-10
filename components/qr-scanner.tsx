@@ -27,16 +27,23 @@ const REQUIRED_CONFIRMATION_FRAMES = 1;
 type Props = {
   autoStart?: boolean;
   debug?: boolean;
+  isPaused?: boolean;
   onScan: (seed: LifeGrid, qrValue: string | null) => void;
 };
 
-export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
+export function QrScanner({
+  autoStart = false,
+  debug = false,
+  isPaused = false,
+  onScan,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const detectingRef = useRef(false);
   const hasAttemptedAutoScanRef = useRef(false);
+  const shouldResumeAfterPauseRef = useRef(false);
   const [cameraPermissionState, setCameraPermissionState] =
     useState<CameraPermissionState>("checking");
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("idle");
@@ -255,12 +262,41 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
   }, [stopCamera]);
 
   useEffect(() => {
+    if (isPaused) {
+      shouldResumeAfterPauseRef.current = streamRef.current !== null;
+      stopCamera();
+      setScannerStatus("idle");
+      setScannerMessage("Scanner paused.");
+      return;
+    }
+
+    if (!shouldResumeAfterPauseRef.current) {
+      return;
+    }
+
+    shouldResumeAfterPauseRef.current = false;
+    void beginScan();
+  }, [beginScan, isPaused, stopCamera]);
+
+  useEffect(() => {
+    if (isPaused) {
+      return;
+    }
+
     return () => {
       stopCamera();
     };
-  }, [stopCamera]);
+  }, [isPaused, stopCamera]);
 
   useEffect(() => {
+    if (isPaused) {
+      return;
+    }
+
+    if (shouldResumeAfterPauseRef.current) {
+      return;
+    }
+
     if (scannerStatus !== "idle") {
       return;
     }
@@ -293,7 +329,7 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
     }
 
     setScannerMessage("Enable your camera and point it at a QR code.");
-  }, [autoStart, beginScan, cameraPermissionState, scannerStatus]);
+  }, [autoStart, beginScan, cameraPermissionState, isPaused, scannerStatus]);
 
   useEffect(() => {
     if (typeof navigator === "undefined") {
@@ -375,7 +411,7 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
   }, [detectCode, scannerStatus]);
 
   return (
-    <div className="relative overflow-hidden rounded-[1.35rem] border border-cyan-300/14 bg-[radial-gradient(circle_at_top,rgba(8,47,73,0.34),transparent_44%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))]">
+    <div className="relative w-full overflow-hidden rounded-[1.35rem] border border-cyan-300/14 bg-[radial-gradient(circle_at_top,rgba(8,47,73,0.34),transparent_44%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))]">
       <div className="relative aspect-square">
         <video
           ref={videoRef}
@@ -393,13 +429,13 @@ export function QrScanner({ autoStart = false, debug = false, onScan }: Props) {
           />
         )}
         <div className="pointer-events-none absolute inset-x-[12%] top-1/2 h-px -translate-y-1/2 animate-pulse bg-linear-to-r from-transparent via-cyan-200 to-transparent shadow-[0_0_18px_rgba(103,232,249,0.95)]" />
-        <div className="pointer-events-none absolute left-4 sm:left-6 lg:left-8 top-4 sm:top-6 lg:top-8 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-cyan-300/70" />
-        <div className="pointer-events-none absolute right-4 sm:right-6 lg:right-8 top-4 sm:top-6 lg:top-8 h-10 w-10 rounded-tr-2xl border-r-2 border-t-2 border-cyan-300/70" />
-        <div className="pointer-events-none absolute bottom-4 sm:bottom-6 lg:bottom-8 left-4 sm:left-6 lg:left-8 h-10 w-10 rounded-bl-2xl border-b-2 border-l-2 border-cyan-300/70" />
-        <div className="pointer-events-none absolute bottom-4 sm:bottom-6 lg:bottom-8 right-4 sm:right-6 lg:right-8 h-10 w-10 rounded-br-2xl border-b-2 border-r-2 border-cyan-300/70" />
+        <div className="pointer-events-none absolute top-4 left-4 h-10 w-10 rounded-tl-2xl border-t-2 border-l-2 border-cyan-300/70 sm:top-6 sm:left-6 lg:top-8 lg:left-8" />
+        <div className="pointer-events-none absolute top-4 right-4 h-10 w-10 rounded-tr-2xl border-t-2 border-r-2 border-cyan-300/70 sm:top-6 sm:right-6 lg:top-8 lg:right-8" />
+        <div className="pointer-events-none absolute bottom-4 left-4 h-10 w-10 rounded-bl-2xl border-b-2 border-l-2 border-cyan-300/70 sm:bottom-6 sm:left-6 lg:bottom-8 lg:left-8" />
+        <div className="pointer-events-none absolute right-4 bottom-4 h-10 w-10 rounded-br-2xl border-r-2 border-b-2 border-cyan-300/70 sm:right-6 sm:bottom-6 lg:right-8 lg:bottom-8" />
 
         {scannerStatus === "ready" ? (
-          <div className="pointer-events-none absolute bottom-8 sm:bottom-10 lg:bottom-12 left-1/2 -translate-x-1/2 rounded-2xl border border-cyan-300/14 bg-slate-950/30 px-4 py-3 text-center backdrop-blur w-[80%]">
+          <div className="pointer-events-none absolute bottom-8 left-1/2 w-[80%] -translate-x-1/2 rounded-2xl border border-cyan-300/14 bg-slate-950/30 px-4 py-3 text-center backdrop-blur sm:bottom-10 lg:bottom-12">
             <p className="text-sm font-medium text-white">{scannerMessage}</p>
             <p className="mt-1 text-xs uppercase tracking-[0.2em] text-cyan-200/70">
               Keep the QR centered

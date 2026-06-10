@@ -19,7 +19,7 @@ const buttonVariants = cva(
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
         aurora:
-          "rounded-full border-cyan-200/20 bg-linear-to-r from-cyan-400 via-emerald-300 to-fuchsia-400 text-slate-950 shadow-[0_12px_40px_-20px_rgba(34,211,238,0.85)] hover:-translate-y-0.5",
+          "rounded-full border-cyan-200/20 bg-linear-to-r from-cyan-400 via-emerald-300 to-fuchsia-400 text-slate-950 shadow-[0_12px_40px_-20px_rgba(34,211,238,0.85)] hover:-translate-y-0.5 disabled:brightness-75 disabled:opacity-35 disabled:saturate-50 disabled:shadow-none disabled:hover:translate-y-0",
         glass:
           "rounded-full border-white/12 bg-white/6 text-white/90 hover:bg-white/10",
         quiet:
