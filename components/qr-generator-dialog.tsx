@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { LifeGrid } from "@/lib/game-of-life";
 import { createQrSeedFromText } from "@/lib/qr-generator";
+import { downloadQrSvg } from "@/lib/qr-svg";
 
 type Props = {
   onGenerate: (seed: LifeGrid, qrValue: string) => void;
@@ -48,6 +49,7 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
   const previewText = useDeferredValue(text);
   const previewState = getPreviewState(previewText);
   const submitState = getPreviewState(text);
+  const canExport = previewState.error === null && previewState.seed !== null;
   const canGenerate =
     text.length > 0 && submitState.error === null && submitState.seed !== null;
 
@@ -101,7 +103,22 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
             </p>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3">
+            <Button
+              disabled={!canExport}
+              onClick={() => {
+                if (!previewState.seed) {
+                  return;
+                }
+
+                downloadQrSvg(previewState.seed);
+              }}
+              type="button"
+              variant="glass"
+              className="h-auto px-5 py-2.5 text-sm font-semibold"
+            >
+              Export
+            </Button>
             <Button
               disabled={!canGenerate}
               type="submit"

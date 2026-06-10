@@ -1,40 +1,15 @@
 "use client";
 
 import type { LifeGrid } from "@/lib/game-of-life";
-
-const QUIET_ZONE_SIZE = 2;
+import { getQrSvgPathData, getQrSvgViewBoxSize } from "@/lib/qr-svg";
 
 type Props = {
   seed: LifeGrid;
 };
 
 export function QrGeneratorPreview({ seed }: Props) {
-  const moduleCount = seed.length;
-  const viewBoxSize = moduleCount + QUIET_ZONE_SIZE * 2;
-  const darkModules = [];
-
-  for (let rowIndex = 0; rowIndex < seed.length; rowIndex += 1) {
-    for (
-      let columnIndex = 0;
-      columnIndex < seed[rowIndex].length;
-      columnIndex += 1
-    ) {
-      if (!seed[rowIndex]?.[columnIndex]) {
-        continue;
-      }
-
-      darkModules.push(
-        <rect
-          fill="black"
-          height="1"
-          key={`module-${rowIndex}-${columnIndex}`}
-          width="1"
-          x={columnIndex + QUIET_ZONE_SIZE}
-          y={rowIndex + QUIET_ZONE_SIZE}
-        />,
-      );
-    }
-  }
+  const viewBoxSize = getQrSvgViewBoxSize(seed);
+  const pathData = getQrSvgPathData(seed);
 
   return (
     <svg
@@ -45,7 +20,7 @@ export function QrGeneratorPreview({ seed }: Props) {
       viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
     >
       <rect fill="white" height={viewBoxSize} width={viewBoxSize} x="0" y="0" />
-      {darkModules}
+      {pathData && <path d={pathData} fill="black" />}
     </svg>
   );
 }
