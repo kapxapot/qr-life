@@ -444,14 +444,7 @@ export function QrScanner({
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-950/78 px-8 text-center">
             <div className="max-w-sm">
-              <h1 className="mt-6 text-xl font-semibold tracking-tight text-white sm:text-2xl lg:text-3xl">
-                Scan a QR to{" "}
-                <span className="bg-linear-to-r from-cyan-300 via-emerald-300 to-fuchsia-400 bg-clip-text text-transparent">
-                  bring it to life
-                </span>
-              </h1>
-
-              <p className="mt-3 text-sm leading-6 text-slate-300">
+              <p className="text-sm leading-6 text-slate-300">
                 {scannerMessage}
               </p>
 
