@@ -64,7 +64,7 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
         showCloseButton
       >
         <form
-          className="space-y-4 p-4 lg:space-y-6 lg:p-6"
+          className="space-y-6 p-6"
           onSubmit={(event) => {
             event.preventDefault();
 
@@ -80,7 +80,7 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
 
           {previewState.seed && (
             <div className="flex justify-center">
-              <div className="aspect-square w-full max-w-72">
+              <div className="aspect-square w-full max-w-48 sm:max-w-72">
                 <QrGeneratorPreview seed={previewState.seed} />
               </div>
             </div>

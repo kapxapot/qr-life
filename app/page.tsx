@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { MainView } from "@/components/main-view";
+import { siteDescription, siteTitle } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
-  title: "QR Life",
-  description:
-    "Scan a QR code, turn it into a Conway's Game of Life seed, and bring it to life.",
+  title: siteTitle,
+  description: siteDescription,
 };
 
 export default function Home() {

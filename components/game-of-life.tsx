@@ -1529,7 +1529,7 @@ function GameOfLifeSession({
                       step={20}
                       value={speedSliderValue}
                       onChange={handleSpeedChange}
-                      className="h-1.5 w-20 cursor-pointer accent-cyan-300 sm:w-28"
+                      className="h-1.5 w-28 cursor-pointer accent-cyan-300"
                       aria-label="Simulation speed"
                     />
                   </label>

@@ -1,7 +1,14 @@
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { PwaRegistration } from "@/components/pwa-registration";
+import {
+  siteDescription,
+  siteKeywords,
+  siteName,
+  siteTitle,
+} from "@/lib/site-metadata";
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -14,12 +21,44 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QR Life",
-  description:
-    "Bring any QR code to life as a vivid Conway's Game of Life seed.",
+  applicationName: siteName,
+  title: {
+    default: siteName,
+    template: `%s | ${siteName}`,
+  },
+  description: siteDescription,
+  keywords: [...siteKeywords],
+  category: "technology",
+  openGraph: {
+    title: siteTitle,
+    description: siteDescription,
+    siteName,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: siteTitle,
+    description: siteDescription,
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: siteName,
+  },
+  formatDetection: {
+    address: false,
+    date: false,
+    email: false,
+    telephone: false,
+    url: false,
+  },
   icons: {
     apple: [{ url: "/favicon/apple-touch-icon.png", sizes: "180x180" }],
     icon: [
+      {
+        url: "/favicon/favicon.ico",
+        sizes: "any",
+      },
       {
         url: "/favicon/favicon-32x32.png",
         type: "image/png",
@@ -32,7 +71,7 @@ export const metadata: Metadata = {
       },
     ],
   },
-  manifest: "/favicon/site.webmanifest",
+  manifest: "/manifest.webmanifest",
 };
 
 export const viewport: Viewport = {
@@ -41,6 +80,8 @@ export const viewport: Viewport = {
   minimumScale: 1,
   maximumScale: 1,
   userScalable: false,
+  colorScheme: "dark",
+  themeColor: "#040816",
 };
 
 export default function RootLayout({
@@ -56,6 +97,7 @@ export default function RootLayout({
     >
       <body className="relative z-0 min-h-dvh overflow-x-hidden bg-background font-sans antialiased">
         <Analytics />
+        <PwaRegistration />
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
