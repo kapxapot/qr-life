@@ -2,12 +2,7 @@ import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { PwaRegistration } from "@/components/pwa-registration";
-import {
-  siteDescription,
-  siteKeywords,
-  siteName,
-  siteTitle,
-} from "@/lib/site-metadata";
+import { siteDescription, siteKeywords, siteName } from "@/lib/site-metadata";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,14 +25,14 @@ export const metadata: Metadata = {
   keywords: [...siteKeywords],
   category: "technology",
   openGraph: {
-    title: siteTitle,
+    title: siteName,
     description: siteDescription,
     siteName,
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: siteTitle,
+    title: siteName,
     description: siteDescription,
   },
   appleWebApp: {

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { MainView } from "@/components/main-view";
-import { siteDescription, siteTitle } from "@/lib/site-metadata";
+import { siteDescription } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
-  title: siteTitle,
   description: siteDescription,
 };
 
