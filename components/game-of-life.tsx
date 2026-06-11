@@ -26,6 +26,7 @@ import {
   type LifeDebugSnapshot,
 } from "@/lib/game-of-life-debug";
 import {
+  getExpandedBounds,
   getRequiredViewportBaseSpanForBounds,
   getViewportCenterForBounds,
   getViewportSpans,
@@ -661,6 +662,7 @@ function GameOfLifeSession({
   const largestViewportBaseSpanRef = useRef(
     initialGameViewState.viewportBaseSpan,
   );
+  const autofitBoundsRef = useRef<UniverseBounds | null>(null);
   const viewportCenterRef = useRef<ViewportCenter>(
     initialGameViewState.viewportCenter,
   );
@@ -752,22 +754,26 @@ function GameOfLifeSession({
           canvas.clientHeight || canvas.getBoundingClientRect().height,
         ),
       );
-      const nextAutofitBounds = getPaddedUniverseBounds(
+      const rawAutofitBounds = getPaddedUniverseBounds(
         nextAutofitUniverse,
         nextAutofitUniverse,
         AUTO_FIT_VIEWPORT_PADDING,
       );
+      const nextAutofitBounds = nextIsAutoZoomEnabled
+        ? getExpandedBounds(autofitBoundsRef.current, rawAutofitBounds)
+        : rawAutofitBounds;
       const nextAutofitTargetSpan = nextAutofitBounds
-        ? getRequiredViewportBaseSpan(
-            nextAutofitUniverse,
-            nextAutofitUniverse,
-            AUTO_FIT_VIEWPORT_PADDING,
+        ? getRequiredViewportBaseSpanForBounds(
+            nextAutofitBounds,
             renderedCanvasWidth,
             renderedCanvasHeight,
+            MIN_VIEWPORT_SPAN,
           )
         : null;
 
       if (nextIsAutoZoomEnabled && nextAutofitBounds) {
+        autofitBoundsRef.current = nextAutofitBounds;
+
         const currentViewport = buildViewport(
           nextViewportBaseSpan,
           nextViewportCenter,
@@ -799,6 +805,8 @@ function GameOfLifeSession({
           largestViewportBaseSpanRef.current = nextViewportBaseSpan;
           viewportCenterRef.current = nextViewportCenter;
         }
+      } else if (!nextIsAutoZoomEnabled) {
+        autofitBoundsRef.current = null;
       }
       const nextDebugSnapshot = debug
         ? createLifeDebugSnapshot({
@@ -827,6 +835,7 @@ function GameOfLifeSession({
       return;
     }
 
+    autofitBoundsRef.current = null;
     isAutoZoomEnabledRef.current = false;
     setIsAutoZoomEnabled(false);
   }, []);
@@ -940,6 +949,7 @@ function GameOfLifeSession({
 
       activePointersRef.current.clear();
       pinchGestureRef.current = null;
+      autofitBoundsRef.current = null;
       largestViewportBaseSpanRef.current =
         nextInitialGameViewState.viewportBaseSpan;
       viewportCenterRef.current = nextInitialGameViewState.viewportCenter;
@@ -1067,12 +1077,12 @@ function GameOfLifeSession({
       );
 
       if (nextAutofitBounds) {
-        nextViewportBaseSpan = getRequiredViewportBaseSpan(
-          nextAutofitUniverse,
-          nextAutofitUniverse,
-          AUTO_FIT_VIEWPORT_PADDING,
+        autofitBoundsRef.current = nextAutofitBounds;
+        nextViewportBaseSpan = getRequiredViewportBaseSpanForBounds(
+          nextAutofitBounds,
           renderedCanvasWidth,
           renderedCanvasHeight,
+          MIN_VIEWPORT_SPAN,
         );
         nextViewportCenter = getAutofitViewportCenter(
           currentViewport,
@@ -1082,6 +1092,8 @@ function GameOfLifeSession({
           renderedCanvasWidth,
           renderedCanvasHeight,
         );
+      } else {
+        autofitBoundsRef.current = null;
       }
     }
 

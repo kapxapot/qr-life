@@ -1,8 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
+  getExpandedBounds,
   getRequiredViewportBaseSpanForBounds,
   getViewportCenterForBounds,
 } from "../lib/game-of-life-viewport";
+
+describe("getExpandedBounds", () => {
+  it("grows the tracked autofit envelope without letting it shrink", () => {
+    expect(
+      getExpandedBounds(
+        {
+          maxX: 20,
+          maxY: 8,
+          minX: -22,
+          minY: -9,
+        },
+        {
+          maxX: 19,
+          maxY: 7,
+          minX: -21,
+          minY: -8,
+        },
+      ),
+    ).toEqual({
+      maxX: 20,
+      maxY: 8,
+      minX: -22,
+      minY: -9,
+    });
+  });
+});
 
 describe("getRequiredViewportBaseSpanForBounds", () => {
   it("sizes the autofit span from the live bounds instead of the current center", () => {

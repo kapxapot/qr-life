@@ -64,6 +64,26 @@ export function getRequiredViewportBaseSpanForBounds(
   );
 }
 
+export function getExpandedBounds(
+  previousBounds: UniverseBounds | null,
+  nextBounds: UniverseBounds | null,
+): UniverseBounds | null {
+  if (!previousBounds) {
+    return nextBounds;
+  }
+
+  if (!nextBounds) {
+    return previousBounds;
+  }
+
+  return {
+    maxX: Math.max(previousBounds.maxX, nextBounds.maxX),
+    maxY: Math.max(previousBounds.maxY, nextBounds.maxY),
+    minX: Math.min(previousBounds.minX, nextBounds.minX),
+    minY: Math.min(previousBounds.minY, nextBounds.minY),
+  };
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }

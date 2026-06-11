@@ -3,7 +3,12 @@
 import { useDeferredValue, useRef, useState } from "react";
 import { QrGeneratorPreview } from "@/components/qr-generator-preview";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { LifeGrid } from "@/lib/game-of-life";
 import { createQrSeedFromText } from "@/lib/qr-generator";
 import { downloadQrSvg } from "@/lib/qr-svg";
@@ -77,6 +82,10 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
           }}
         >
           <DialogTitle className="sr-only">Generate QR</DialogTitle>
+          <DialogDescription className="sr-only">
+            Enter text to preview a QR code, then export it or open it in the
+            Game of Life.
+          </DialogDescription>
 
           {previewState.seed && (
             <div className="flex justify-center">
