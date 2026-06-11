@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { LifeGrid } from "@/lib/game-of-life";
@@ -61,6 +61,7 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        aria-describedby={undefined}
         className="overflow-hidden border border-cyan-300/14 bg-linear-[180deg,rgba(10,18,34,0.98),rgba(5,10,20,0.98)] p-0 text-white shadow-[0_32px_90px_-48px_rgba(34,211,238,0.5)] sm:max-w-sm"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -69,7 +70,7 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
         showCloseButton
       >
         <form
-          className="space-y-6 p-6"
+          className="space-y-6 p-4 sm:p-6"
           onSubmit={(event) => {
             event.preventDefault();
 
@@ -81,11 +82,11 @@ export function QrGeneratorDialog({ onGenerate, onOpenChange, open }: Props) {
             setText("");
           }}
         >
-          <DialogTitle className="sr-only">Generate QR</DialogTitle>
-          <DialogDescription className="sr-only">
-            Enter text to preview a QR code, then export it or open it in the
-            Game of Life.
-          </DialogDescription>
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold tracking-tight text-white leading-none">
+              Generate QR
+            </DialogTitle>
+          </DialogHeader>
 
           {previewState.seed && (
             <div className="flex justify-center">
