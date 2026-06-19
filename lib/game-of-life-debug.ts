@@ -1,4 +1,5 @@
 import {
+  type FreeFlyingPatternCells,
   getAutofitUniverse,
   getUniverseBounds,
   type LifeUniverse,
@@ -11,6 +12,7 @@ export type LifeDebugSnapshot = {
   autofitLiveCount: number;
   autofitTargetSpan: number | null;
   gliderCount: number;
+  lwssCount: number;
   universeBounds: UniverseBounds | null;
   universeLiveCount: number;
   viewportBaseSpan: number;
@@ -18,7 +20,7 @@ export type LifeDebugSnapshot = {
 
 type CreateLifeDebugSnapshotOptions = {
   autofitTargetSpan: number | null;
-  gliderCells: LifeUniverse;
+  patternCells: FreeFlyingPatternCells;
   universe: LifeUniverse;
   viewportBaseSpan: number;
 };
@@ -61,11 +63,14 @@ export function formatLifeBounds(bounds: UniverseBounds | null) {
 
 export function createLifeDebugSnapshot({
   autofitTargetSpan,
-  gliderCells,
+  patternCells,
   universe,
   viewportBaseSpan,
 }: CreateLifeDebugSnapshotOptions): LifeDebugSnapshot {
-  const autofitUniverse = getAutofitUniverse(universe, gliderCells);
+  const autofitUniverse = getAutofitUniverse(
+    universe,
+    patternCells.excludedCells,
+  );
   const autofitBounds = getUniverseBounds(autofitUniverse);
 
   return {
@@ -73,7 +78,8 @@ export function createLifeDebugSnapshot({
     autofitEdgeCells: getBoundsEdgeCells(autofitUniverse, autofitBounds),
     autofitLiveCount: autofitUniverse.size,
     autofitTargetSpan,
-    gliderCount: gliderCells.size,
+    gliderCount: patternCells.gliderCells.size,
+    lwssCount: patternCells.lwssCells.size,
     universeBounds: getUniverseBounds(universe),
     universeLiveCount: universe.size,
     viewportBaseSpan,

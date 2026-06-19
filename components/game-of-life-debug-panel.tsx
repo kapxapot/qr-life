@@ -15,6 +15,7 @@ export function GameOfLifeDebugPanel({ debugSnapshot }: Props) {
       </p>
       <p>All: {debugSnapshot.universeLiveCount}</p>
       <p>Gliders: {debugSnapshot.gliderCount}</p>
+      <p>LWSS: {debugSnapshot.lwssCount}</p>
       <p>Fit live: {debugSnapshot.autofitLiveCount}</p>
       <p>Span: {debugSnapshot.viewportBaseSpan}</p>
       <p>Auto span: {debugSnapshot.autofitTargetSpan ?? "n/a"}</p>

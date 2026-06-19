@@ -17,6 +17,47 @@ type CellPosition = {
   y: number;
 };
 
+type PatternSpan = {
+  x: number;
+  y: number;
+};
+
+type FreeFlyingPatternDescriptor = {
+  isExpectedTranslation: (deltaX: number, deltaY: number) => boolean;
+  neighborRadius: number;
+  phasePopulations: readonly number[];
+  period: number;
+  spans: readonly PatternSpan[];
+};
+
+export type FreeFlyingPatternCells = {
+  excludedCells: LifeUniverse;
+  gliderCells: LifeUniverse;
+  lwssCells: LifeUniverse;
+};
+
+const GLIDER_PATTERN: FreeFlyingPatternDescriptor = {
+  isExpectedTranslation: (deltaX, deltaY) =>
+    Math.abs(deltaX) === 1 && Math.abs(deltaY) === 1,
+  neighborRadius: 1,
+  phasePopulations: [5],
+  period: 4,
+  spans: [{ x: 3, y: 3 }],
+};
+
+const LWSS_PATTERN: FreeFlyingPatternDescriptor = {
+  isExpectedTranslation: (deltaX, deltaY) =>
+    (Math.abs(deltaX) === 2 && deltaY === 0) ||
+    (deltaX === 0 && Math.abs(deltaY) === 2),
+  neighborRadius: 2,
+  phasePopulations: [9, 12],
+  period: 4,
+  spans: [
+    { x: 4, y: 5 },
+    { x: 5, y: 4 },
+  ],
+};
+
 function toCellKey(x: number, y: number) {
   return `${x}:${y}`;
 }
@@ -58,6 +99,20 @@ export function countPopulation(universe: LifeUniverse): number {
   return universe.size;
 }
 
+function addUniverseCells(target: LifeUniverse, source: LifeUniverse) {
+  for (const cellKey of source) {
+    target.add(cellKey);
+  }
+}
+
+function createEmptyFreeFlyingPatternCells(): FreeFlyingPatternCells {
+  return {
+    excludedCells: new Set<string>(),
+    gliderCells: new Set<string>(),
+    lwssCells: new Set<string>(),
+  };
+}
+
 export function nextGeneration(universe: LifeUniverse): LifeUniverse {
   const neighborCounts = new Map<string, number>();
 
@@ -93,16 +148,16 @@ export function nextGeneration(universe: LifeUniverse): LifeUniverse {
 
 export function getAutofitUniverse(
   universe: LifeUniverse,
-  gliderCells: LifeUniverse,
+  excludedCells: LifeUniverse,
 ): LifeUniverse {
-  if (gliderCells.size === 0) {
+  if (excludedCells.size === 0) {
     return universe;
   }
 
   const autofitUniverse = new Set<string>();
 
   for (const cellKey of universe) {
-    if (!gliderCells.has(cellKey)) {
+    if (!excludedCells.has(cellKey)) {
       autofitUniverse.add(cellKey);
     }
   }
@@ -114,6 +169,7 @@ function collectConnectedComponent(
   universe: LifeUniverse,
   startCellKey: string,
   visited: Set<string>,
+  neighborRadius = 1,
 ): LifeUniverse {
   const component = new Set<string>();
   const pendingCellKeys = [startCellKey];
@@ -131,8 +187,16 @@ function collectConnectedComponent(
 
     const { x, y } = fromCellKey(cellKey);
 
-    for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
-      for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+    for (
+      let rowOffset = -neighborRadius;
+      rowOffset <= neighborRadius;
+      rowOffset += 1
+    ) {
+      for (
+        let columnOffset = -neighborRadius;
+        columnOffset <= neighborRadius;
+        columnOffset += 1
+      ) {
         if (rowOffset === 0 && columnOffset === 0) {
           continue;
         }
@@ -188,8 +252,40 @@ function normalizeUniverseShape(
   };
 }
 
-function isFreeFlyingGliderComponent(component: LifeUniverse): boolean {
-  if (component.size !== 5) {
+function matchesPatternSpan(
+  spans: readonly PatternSpan[],
+  spanX: number,
+  spanY: number,
+) {
+  return spans.some((span) => span.x === spanX && span.y === spanY);
+}
+
+function isSingleConnectedComponent(
+  universe: LifeUniverse,
+  neighborRadius: number,
+) {
+  const [startCellKey] = universe;
+
+  if (!startCellKey) {
+    return false;
+  }
+
+  const visited = new Set<string>();
+  const component = collectConnectedComponent(
+    universe,
+    startCellKey,
+    visited,
+    neighborRadius,
+  );
+
+  return component.size === universe.size;
+}
+
+function isFreeFlyingPatternComponent(
+  component: LifeUniverse,
+  pattern: FreeFlyingPatternDescriptor,
+): boolean {
+  if (!pattern.phasePopulations.includes(component.size)) {
     return false;
   }
 
@@ -202,16 +298,33 @@ function isFreeFlyingGliderComponent(component: LifeUniverse): boolean {
   const spanX = initialShape.maxX - initialShape.minX + 1;
   const spanY = initialShape.maxY - initialShape.minY + 1;
 
-  if (spanX > 3 || spanY > 3) {
+  if (!matchesPatternSpan(pattern.spans, spanX, spanY)) {
     return false;
   }
 
   let nextComponent = cloneUniverse(component);
 
-  for (let generation = 0; generation < 4; generation += 1) {
+  for (let generation = 0; generation < pattern.period; generation += 1) {
     nextComponent = nextGeneration(nextComponent);
 
-    if (nextComponent.size !== 5) {
+    if (!pattern.phasePopulations.includes(nextComponent.size)) {
+      return false;
+    }
+
+    if (!isSingleConnectedComponent(nextComponent, pattern.neighborRadius)) {
+      return false;
+    }
+
+    const nextPhaseShape = normalizeUniverseShape(nextComponent);
+
+    if (!nextPhaseShape) {
+      return false;
+    }
+
+    const nextSpanX = nextPhaseShape.maxX - nextPhaseShape.minX + 1;
+    const nextSpanY = nextPhaseShape.maxY - nextPhaseShape.minY + 1;
+
+    if (!matchesPatternSpan(pattern.spans, nextSpanX, nextSpanY)) {
       return false;
     }
   }
@@ -224,13 +337,18 @@ function isFreeFlyingGliderComponent(component: LifeUniverse): boolean {
 
   return (
     initialShape.signature === nextShape.signature &&
-    Math.abs(nextShape.minX - initialShape.minX) === 1 &&
-    Math.abs(nextShape.minY - initialShape.minY) === 1
+    pattern.isExpectedTranslation(
+      nextShape.minX - initialShape.minX,
+      nextShape.minY - initialShape.minY,
+    )
   );
 }
 
-export function getFreeFlyingGliderCells(universe: LifeUniverse): LifeUniverse {
-  const gliderCells = new Set<string>();
+function getFreeFlyingPatternCellsByComponent(
+  universe: LifeUniverse,
+  pattern: FreeFlyingPatternDescriptor,
+): LifeUniverse {
+  const patternCells = new Set<string>();
   const visited = new Set<string>();
 
   for (const cellKey of universe) {
@@ -238,18 +356,47 @@ export function getFreeFlyingGliderCells(universe: LifeUniverse): LifeUniverse {
       continue;
     }
 
-    const component = collectConnectedComponent(universe, cellKey, visited);
+    const component = collectConnectedComponent(
+      universe,
+      cellKey,
+      visited,
+      pattern.neighborRadius,
+    );
 
-    if (!isFreeFlyingGliderComponent(component)) {
+    if (!isFreeFlyingPatternComponent(component, pattern)) {
       continue;
     }
 
-    for (const gliderCellKey of component) {
-      gliderCells.add(gliderCellKey);
-    }
+    addUniverseCells(patternCells, component);
   }
 
-  return gliderCells;
+  return patternCells;
+}
+
+export function getFreeFlyingPatternCells(
+  universe: LifeUniverse,
+): FreeFlyingPatternCells {
+  const detectedPatterns = createEmptyFreeFlyingPatternCells();
+
+  detectedPatterns.gliderCells = getFreeFlyingPatternCellsByComponent(
+    universe,
+    GLIDER_PATTERN,
+  );
+  detectedPatterns.lwssCells = getFreeFlyingPatternCellsByComponent(
+    universe,
+    LWSS_PATTERN,
+  );
+  addUniverseCells(
+    detectedPatterns.excludedCells,
+    detectedPatterns.gliderCells,
+  );
+  addUniverseCells(detectedPatterns.excludedCells, detectedPatterns.lwssCells);
+
+  return detectedPatterns;
+}
+
+export function getFreeFlyingGliderCells(universe: LifeUniverse): LifeUniverse {
+  return getFreeFlyingPatternCells(universe).gliderCells;
 }
 
 export function getUniverseBounds(
