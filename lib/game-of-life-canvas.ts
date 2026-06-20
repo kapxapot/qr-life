@@ -27,6 +27,7 @@ const MIN_VISIBLE_LIVE_CELL_GAP_DEVICE_PIXELS = 2;
 const LIVE_CELL_COLOR = "#67e8f9";
 const GLIDER_CELL_COLOR = "#ffcc4a";
 const LWSS_CELL_COLOR = "#46ea82";
+const MWSS_CELL_COLOR = "#ff0228";
 const DEBUG_AUTOFIT_BOUNDS_COLOR = "#f43f5e";
 const DEBUG_UNIVERSE_BOUNDS_COLOR = "#22c55e";
 const DEBUG_AUTOFIT_EDGE_COLOR = "#f8fafc";
@@ -160,6 +161,7 @@ export function cloneFreeFlyingPatternCells(
     excludedCells: cloneUniverse(patternCells.excludedCells),
     gliderCells: cloneUniverse(patternCells.gliderCells),
     lwssCells: cloneUniverse(patternCells.lwssCells),
+    mwssCells: cloneUniverse(patternCells.mwssCells),
   };
 }
 
@@ -573,6 +575,14 @@ export function drawUniverse(
     context.fillStyle = LWSS_CELL_COLOR;
 
     for (const cellKey of patternCells.lwssCells) {
+      drawCell(cellKey);
+    }
+  }
+
+  if (patternCells.mwssCells.size > 0) {
+    context.fillStyle = MWSS_CELL_COLOR;
+
+    for (const cellKey of patternCells.mwssCells) {
       drawCell(cellKey);
     }
   }

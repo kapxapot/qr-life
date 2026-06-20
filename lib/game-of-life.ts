@@ -34,6 +34,7 @@ export type FreeFlyingPatternCells = {
   excludedCells: LifeUniverse;
   gliderCells: LifeUniverse;
   lwssCells: LifeUniverse;
+  mwssCells: LifeUniverse;
 };
 
 const GLIDER_PATTERN: FreeFlyingPatternDescriptor = {
@@ -55,6 +56,21 @@ const LWSS_PATTERN: FreeFlyingPatternDescriptor = {
   spans: [
     { x: 4, y: 5 },
     { x: 5, y: 4 },
+  ],
+};
+
+const MWSS_PATTERN: FreeFlyingPatternDescriptor = {
+  isExpectedTranslation: (deltaX, deltaY) =>
+    (Math.abs(deltaX) === 2 && deltaY === 0) ||
+    (deltaX === 0 && Math.abs(deltaY) === 2),
+  neighborRadius: 2,
+  phasePopulations: [11, 15],
+  period: 4,
+  spans: [
+    { x: 6, y: 5 },
+    { x: 5, y: 6 },
+    { x: 6, y: 4 },
+    { x: 4, y: 6 },
   ],
 };
 
@@ -110,6 +126,7 @@ function createEmptyFreeFlyingPatternCells(): FreeFlyingPatternCells {
     excludedCells: new Set<string>(),
     gliderCells: new Set<string>(),
     lwssCells: new Set<string>(),
+    mwssCells: new Set<string>(),
   };
 }
 
@@ -386,11 +403,16 @@ export function getFreeFlyingPatternCells(
     universe,
     LWSS_PATTERN,
   );
+  detectedPatterns.mwssCells = getFreeFlyingPatternCellsByComponent(
+    universe,
+    MWSS_PATTERN,
+  );
   addUniverseCells(
     detectedPatterns.excludedCells,
     detectedPatterns.gliderCells,
   );
   addUniverseCells(detectedPatterns.excludedCells, detectedPatterns.lwssCells);
+  addUniverseCells(detectedPatterns.excludedCells, detectedPatterns.mwssCells);
 
   return detectedPatterns;
 }

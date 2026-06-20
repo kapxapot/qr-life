@@ -37,6 +37,20 @@ const BASE_LWSS: readonly Point[] = [
   { x: 3, y: 3 },
 ];
 
+const BASE_MWSS: readonly Point[] = [
+  { x: 3, y: 0 },
+  { x: 1, y: 1 },
+  { x: 5, y: 1 },
+  { x: 0, y: 2 },
+  { x: 0, y: 3 },
+  { x: 5, y: 3 },
+  { x: 0, y: 4 },
+  { x: 1, y: 4 },
+  { x: 2, y: 4 },
+  { x: 3, y: 4 },
+  { x: 4, y: 4 },
+];
+
 const GLIDER_BOUNDS: PatternBounds = {
   height: 3,
   width: 3,
@@ -45,6 +59,11 @@ const GLIDER_BOUNDS: PatternBounds = {
 const LWSS_BOUNDS: PatternBounds = {
   height: 4,
   width: 5,
+};
+
+const MWSS_BOUNDS: PatternBounds = {
+  height: 5,
+  width: 6,
 };
 
 const TRANSFORMS = {
@@ -184,17 +203,49 @@ describe("getFreeFlyingPatternCells", () => {
 
     expect(getFreeFlyingPatternCells(universe).lwssCells.size).toBe(0);
   });
+
+  describe.each(Object.entries(TRANSFORMS))("%s", (_name, transform) => {
+    it.each([0, 1, 2, 3])("detects isolated MWSS in phase %i", (phase) => {
+      const startingUniverse = createUniverse(
+        transformPoints(BASE_MWSS, MWSS_BOUNDS, transform, 42, 42),
+      );
+      const universe = advanceGenerations(startingUniverse, phase);
+      const patternCells = getFreeFlyingPatternCells(universe);
+
+      expect(patternCells.gliderCells.size).toBe(0);
+      expect(patternCells.lwssCells.size).toBe(0);
+      expect(patternCells.mwssCells.size).toBe(universe.size);
+      expect(sortCellKeys(patternCells.mwssCells)).toEqual(
+        sortCellKeys(universe),
+      );
+      expect(sortCellKeys(patternCells.excludedCells)).toEqual(
+        sortCellKeys(universe),
+      );
+    });
+  });
+
+  it("does not detect a MWSS that touches another live cell", () => {
+    const universe = createUniverse([
+      ...transformPoints(BASE_MWSS, MWSS_BOUNDS, TRANSFORMS.identity, 12, 12),
+      { x: 12, y: 11 },
+    ]);
+
+    expect(getFreeFlyingPatternCells(universe).mwssCells.size).toBe(0);
+  });
 });
 
 describe("getAutofitUniverse", () => {
-  it("removes glider and LWSS cells from the autofit universe without mutating inputs", () => {
+  it("removes glider, LWSS, and MWSS cells from the autofit universe without mutating inputs", () => {
     const glider = createUniverse(
       transformPoints(BASE_GLIDER, GLIDER_BOUNDS, TRANSFORMS.identity, 5, 5),
     );
     const lwss = createUniverse(
       transformPoints(BASE_LWSS, LWSS_BOUNDS, TRANSFORMS.rotate90, 20, 8),
     );
-    const universe = new Set([...glider, ...lwss, "0:0", "1:0"]);
+    const mwss = createUniverse(
+      transformPoints(BASE_MWSS, MWSS_BOUNDS, TRANSFORMS.identity, 34, 10),
+    );
+    const universe = new Set([...glider, ...lwss, ...mwss, "0:0", "1:0"]);
     const patternCells = getFreeFlyingPatternCells(universe);
     const autofitUniverse = getAutofitUniverse(
       universe,
@@ -204,8 +255,10 @@ describe("getAutofitUniverse", () => {
     expect(sortCellKeys(autofitUniverse)).toEqual(["0:0", "1:0"]);
     expect(patternCells.gliderCells.size).toBe(5);
     expect(patternCells.lwssCells.size).toBe(9);
-    expect(universe.size).toBe(16);
+    expect(patternCells.mwssCells.size).toBe(11);
+    expect(universe.size).toBe(27);
     expect(glider.size).toBe(5);
     expect(lwss.size).toBe(9);
+    expect(mwss.size).toBe(11);
   });
 });
