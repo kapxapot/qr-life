@@ -54,18 +54,16 @@ export function GameOfLifeActionBar({
 
   return (
     <div className="shrink-0 px-3 sm:px-4">
-      <div className="flex flex-wrap gap-3 lg:justify-center">
+      <div className="flex flex-wrap gap-3 justify-end sm:justify-center">
         <Button
-          type="button"
-          onClick={onStart}
-          variant="aurora"
+          onClick={onScanAnother}
+          variant="quiet"
           className="h-auto px-5 py-2.5 text-sm font-semibold"
         >
-          {startButtonLabel}
+          New
         </Button>
 
         <Button
-          type="button"
           onClick={onReset}
           variant="glass"
           className="h-auto px-5 py-2.5 text-sm font-semibold"
@@ -74,15 +72,14 @@ export function GameOfLifeActionBar({
         </Button>
 
         <Button
-          type="button"
-          onClick={onScanAnother}
-          variant="quiet"
+          onClick={onStart}
+          variant="aurora"
           className="h-auto px-5 py-2.5 text-sm font-semibold"
         >
-          New
+          {startButtonLabel}
         </Button>
 
-        <div className="relative min-w-40 max-w-80 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 lg:w-80 lg:flex-none">
+        <div className="relative min-w-40 max-w-60 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 lg:w-80 lg:flex-none">
           <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
             {qrValue ?? "No QR captured yet."}
           </p>

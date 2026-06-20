@@ -15,10 +15,11 @@ import {
 } from "@/components/ui/dialog";
 import type { LifeGrid } from "@/lib/game-of-life";
 import { decodeSharedQrSeed, encodeSharedQrSeed } from "@/lib/qr-share";
+import { createQrSeedFromText } from "@/lib/qr-generator";
 import Footer from "./footer";
 
 type ScanResult = {
-  encodedQr: string;
+  encodedQr: string | null;
   qrValue: string | null;
   seed: LifeGrid;
 };
@@ -58,18 +59,34 @@ function syncShareUrl(encodedQr: string | null, qrValue: string | null) {
 function parseSharedScanFromSearch(search: string): SharedScanParseResult {
   const searchParams = new URLSearchParams(search);
   const encodedQr = searchParams.get("qr");
+  const value = searchParams.has("value") ? searchParams.get("value") : null;
 
   if (encodedQr === null) {
-    return searchParams.has("value")
-      ? {
-          invalidMessage:
-            "We couldn't open that shared QR link because its encoded grid is missing. The URL has been cleared so you can scan a new code.",
-          scanResult: null,
-        }
-      : {
+    if (value !== null) {
+      try {
+        return {
           invalidMessage: null,
+          scanResult: {
+            encodedQr: null,
+            qrValue: value,
+            seed: createQrSeedFromText(value),
+          },
+        };
+      } catch (error) {
+        const reason =
+          error instanceof Error ? error.message : "The shared QR payload is invalid.";
+
+        return {
+          invalidMessage: `We couldn't open that shared QR link. ${reason} The URL has been cleared so you can scan a new code.`,
           scanResult: null,
         };
+      }
+    }
+
+    return {
+      invalidMessage: null,
+      scanResult: null,
+    };
   }
 
   try {
@@ -77,7 +94,7 @@ function parseSharedScanFromSearch(search: string): SharedScanParseResult {
       invalidMessage: null,
       scanResult: {
         encodedQr,
-        qrValue: searchParams.has("value") ? searchParams.get("value") : null,
+        qrValue: value,
         seed: decodeSharedQrSeed(encodedQr),
       },
     };
@@ -258,7 +275,7 @@ export function MainView() {
           onGenerate={(seed, qrValue) => {
             setShouldAutoStartScanner(false);
             setScanResult({
-              encodedQr: encodeSharedQrSeed(seed),
+              encodedQr: null,
               qrValue,
               seed,
             });
