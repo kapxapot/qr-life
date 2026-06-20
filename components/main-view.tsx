@@ -14,8 +14,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
-import { decodeSharedQrSeed, encodeSharedQrSeed } from "@/lib/qr/qr-share";
 import { createQrSeedFromText } from "@/lib/qr/qr-generator";
+import { decodeSharedQrSeed, encodeSharedQrSeed } from "@/lib/qr/qr-share";
+import {
+  readSharedQrValue,
+  syncSharedScanSearchParams,
+} from "@/lib/qr/share-search-params";
 import Footer from "./footer";
 
 type ScanResult = {
@@ -35,18 +39,7 @@ function syncShareUrl(encodedQr: string | null, qrValue: string | null) {
   }
 
   const url = new URL(window.location.href);
-
-  if (encodedQr) {
-    url.searchParams.set("qr", encodedQr);
-  } else {
-    url.searchParams.delete("qr");
-  }
-
-  if (qrValue === null) {
-    url.searchParams.delete("value");
-  } else {
-    url.searchParams.set("value", qrValue);
-  }
+  syncSharedScanSearchParams(url.searchParams, encodedQr, qrValue);
 
   const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
   const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -59,7 +52,7 @@ function syncShareUrl(encodedQr: string | null, qrValue: string | null) {
 function parseSharedScanFromSearch(search: string): SharedScanParseResult {
   const searchParams = new URLSearchParams(search);
   const encodedQr = searchParams.get("qr");
-  const value = searchParams.has("value") ? searchParams.get("value") : null;
+  const value = readSharedQrValue(searchParams);
 
   if (encodedQr === null) {
     if (value !== null) {
@@ -74,7 +67,9 @@ function parseSharedScanFromSearch(search: string): SharedScanParseResult {
         };
       } catch (error) {
         const reason =
-          error instanceof Error ? error.message : "The shared QR payload is invalid.";
+          error instanceof Error
+            ? error.message
+            : "The shared QR payload is invalid.";
 
         return {
           invalidMessage: `We couldn't open that shared QR link. ${reason} The URL has been cleared so you can scan a new code.`,
