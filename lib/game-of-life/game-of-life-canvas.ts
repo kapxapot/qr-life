@@ -33,6 +33,7 @@ const DEBUG_UNIVERSE_BOUNDS_COLOR = "#22c55e";
 const DEBUG_AUTOFIT_EDGE_COLOR = "#f8fafc";
 
 export const MIN_VIEWPORT_SPAN = 41;
+export const PLAYGROUND_INITIAL_VIEWPORT_BASE_SPAN = 17;
 export const INITIAL_VIEWPORT_PADDING = 6;
 export const AUTO_FIT_VIEWPORT_PADDING = 5;
 
@@ -167,6 +168,9 @@ export function cloneFreeFlyingPatternCells(
 
 export function createInitialGameViewState(
   seed: LifeGrid,
+  options?: {
+    emptyViewportBaseSpan?: number;
+  },
 ): InitialGameViewState {
   const universe = createUniverseFromSeed(seed);
   const patternCells = getFreeFlyingPatternCells(universe);
@@ -181,12 +185,18 @@ export function createInitialGameViewState(
     viewportCenter,
     INITIAL_VIEWPORT_PADDING,
   );
+  const emptyViewportBaseSpan = options?.emptyViewportBaseSpan
+    ? normalizeSquareViewportSpan(options.emptyViewportBaseSpan)
+    : null;
 
   return {
     patternCells,
     population: countPopulation(universe),
     universe,
-    viewportBaseSpan: getInitialViewportBaseSpan(viewportBaseSpan),
+    viewportBaseSpan:
+      universe.size === 0 && emptyViewportBaseSpan !== null
+        ? emptyViewportBaseSpan
+        : getInitialViewportBaseSpan(viewportBaseSpan),
     viewportCenter,
   };
 }

@@ -10,6 +10,7 @@ type Props = Omit<GameOfLifeSessionProps, "onReset">;
 
 export function GameOfLife({
   debug = false,
+  mode = "qr",
   onScanAnother,
   qrValue,
   seed,
@@ -20,6 +21,7 @@ export function GameOfLife({
     <GameOfLifeSession
       debug={debug}
       key={sessionKey}
+      mode={mode}
       onReset={() => {
         setSessionKey((current) => current + 1);
       }}

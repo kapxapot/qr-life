@@ -12,15 +12,18 @@ import {
   type ShareFeedbackState,
 } from "@/components/game-of-life/game-of-life-action-bar";
 import { GameOfLifeCanvasOverlay } from "@/components/game-of-life/game-of-life-canvas-overlay";
+import type { GameOfLifeInteractionMode } from "@/components/game-of-life/game-of-life-mode-switch";
 import {
   cloneUniverse,
   countPopulation,
   type FreeFlyingPatternCells,
   getAutofitUniverse,
   getFreeFlyingPatternCells,
+  getLifeCellKey,
   type LifeGrid,
   type LifeUniverse,
   nextGeneration,
+  toggleLifeCell,
   type UniverseBounds,
 } from "@/lib/game-of-life/game-of-life";
 import {
@@ -44,6 +47,7 @@ import {
   MIN_TICK_DELAY_MS,
   MIN_VIEWPORT_SPAN,
   type PinchGesture,
+  PLAYGROUND_INITIAL_VIEWPORT_BASE_SPAN,
   type PointerCoordinates,
   RESIZE_REDRAW_DEBOUNCE_MS,
   TICK_DELAY_STORAGE_KEY,
@@ -55,6 +59,7 @@ import {
   createLifeDebugSnapshot,
   type LifeDebugSnapshot,
 } from "@/lib/game-of-life/game-of-life-debug";
+import { getLifeCellsAlongWorldSegment } from "@/lib/game-of-life/game-of-life-editing";
 import {
   getBoundsCenter,
   getExpandedBounds,
@@ -63,6 +68,7 @@ import {
 
 export type GameOfLifeSessionProps = {
   debug?: boolean;
+  mode?: "playground" | "qr";
   onReset: () => void;
   onScanAnother: () => void;
   qrValue: string | null;
@@ -77,14 +83,28 @@ type RedrawOptions = {
   zoomFactor?: number;
 };
 
+type EditStroke = {
+  lastWorldX: number;
+  lastWorldY: number;
+  pointerId: number;
+  shouldRestoreAutoZoom: boolean;
+  toggledCellKeys: Set<string>;
+};
+
 export function GameOfLifeSession({
   debug = false,
+  mode = "qr",
   onReset,
   onScanAnother,
   qrValue,
   seed,
 }: GameOfLifeSessionProps) {
-  const initialGameViewState = createInitialGameViewState(seed);
+  const initialGameViewState = createInitialGameViewState(seed, {
+    emptyViewportBaseSpan:
+      mode === "playground" ? PLAYGROUND_INITIAL_VIEWPORT_BASE_SPAN : undefined,
+  });
+  const initialInteractionMode: GameOfLifeInteractionMode =
+    mode === "playground" ? "edit" : "pan";
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const shareFeedbackTimerRef = useRef<number | null>(null);
@@ -107,6 +127,7 @@ export function GameOfLifeSession({
   );
   const activePointersRef = useRef<Map<number, PointerCoordinates>>(new Map());
   const pinchGestureRef = useRef<PinchGesture | null>(null);
+  const editStrokeRef = useRef<EditStroke | null>(null);
 
   const [universe, setUniverse] = useState<LifeUniverse>(() =>
     cloneUniverse(initialGameViewState.universe),
@@ -124,10 +145,17 @@ export function GameOfLifeSession({
   const [hasStartedOnce, setHasStartedOnce] = useState(false);
   const [hasLoadedTickDelayPreference, setHasLoadedTickDelayPreference] =
     useState(false);
+  const [interactionMode, setInteractionMode] =
+    useState<GameOfLifeInteractionMode>(initialInteractionMode);
   const [isRunning, setIsRunning] = useState(false);
   const [isAutoZoomEnabled, setIsAutoZoomEnabled] = useState(true);
   const [tickDelayMs, setTickDelayMs] = useState(DEFAULT_TICK_DELAY_MS);
   const [zoomFactor, setZoomFactor] = useState(AUTO_FIT_ZOOM_FACTOR);
+  const pausedInteractionModeRef = useRef<GameOfLifeInteractionMode>(
+    initialInteractionMode,
+  );
+  const pendingAutoZoomRestoreRef = useRef(false);
+  const interactionModeRef = useRef(interactionMode);
   const isAutoZoomEnabledRef = useRef(isAutoZoomEnabled);
   const zoomFactorRef = useRef(zoomFactor);
 
@@ -152,6 +180,12 @@ export function GameOfLifeSession({
       window.clearTimeout(shareFeedbackTimerRef.current);
       shareFeedbackTimerRef.current = null;
     }
+  }, []);
+
+  const resetCanvasInteractions = useCallback(() => {
+    activePointersRef.current.clear();
+    pinchGestureRef.current = null;
+    editStrokeRef.current = null;
   }, []);
 
   const redrawUniverse = useCallback(
@@ -271,6 +305,77 @@ export function GameOfLifeSession({
     setIsAutoZoomEnabled(false);
   }, []);
 
+  const applyEditedCells = useCallback(
+    (cellKeysToToggle: Iterable<string>) => {
+      const nextUniverse = cloneUniverse(universeRef.current);
+      let hasChanges = false;
+
+      for (const cellKey of cellKeysToToggle) {
+        const [xValue = "0", yValue = "0"] = cellKey.split(":");
+        const cellX = Number(xValue);
+        const cellY = Number(yValue);
+
+        if (!Number.isFinite(cellX) || !Number.isFinite(cellY)) {
+          continue;
+        }
+
+        toggleLifeCell(nextUniverse, cellX, cellY);
+        hasChanges = true;
+      }
+
+      if (!hasChanges) {
+        return;
+      }
+
+      const nextPatternCells = getFreeFlyingPatternCells(nextUniverse);
+      const nextPopulation = countPopulation(nextUniverse);
+
+      disableAutoZoom();
+      universeRef.current = nextUniverse;
+      patternCellsRef.current = nextPatternCells;
+      setUniverse(nextUniverse);
+      setPatternCells(nextPatternCells);
+      setPopulation(nextPopulation);
+      redrawUniverse({
+        isAutoZoomEnabled: false,
+        patternCells: nextPatternCells,
+        universe: nextUniverse,
+      });
+    },
+    [disableAutoZoom, redrawUniverse],
+  );
+
+  const toggleCellsAlongWorldSegment = useCallback(
+    (
+      startWorldX: number,
+      startWorldY: number,
+      endWorldX: number,
+      endWorldY: number,
+      toggledCellKeys: Set<string>,
+    ) => {
+      const nextCellKeysToToggle = new Set<string>();
+
+      for (const { x, y } of getLifeCellsAlongWorldSegment(
+        startWorldX,
+        startWorldY,
+        endWorldX,
+        endWorldY,
+      )) {
+        const cellKey = getLifeCellKey(x, y);
+
+        if (toggledCellKeys.has(cellKey)) {
+          continue;
+        }
+
+        toggledCellKeys.add(cellKey);
+        nextCellKeysToToggle.add(cellKey);
+      }
+
+      applyEditedCells(nextCellKeysToToggle);
+    },
+    [applyEditedCells],
+  );
+
   const commitManualViewport = useCallback(
     (
       nextViewportCenter: ViewportCenter,
@@ -345,6 +450,8 @@ export function GameOfLifeSession({
         return;
       }
 
+      pendingAutoZoomRestoreRef.current = false;
+
       const nextViewport = buildViewport(
         largestViewportBaseSpanRef.current,
         viewportCenterRef.current,
@@ -378,8 +485,7 @@ export function GameOfLifeSession({
     (nextInitialGameViewState = initialGameViewStateRef.current) => {
       const nextUniverse = cloneUniverse(nextInitialGameViewState.universe);
 
-      activePointersRef.current.clear();
-      pinchGestureRef.current = null;
+      resetCanvasInteractions();
       autofitBoundsRef.current = null;
       largestViewportBaseSpanRef.current =
         nextInitialGameViewState.viewportBaseSpan;
@@ -398,6 +504,9 @@ export function GameOfLifeSession({
       zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
       setGeneration(0);
       setHasStartedOnce(false);
+      pausedInteractionModeRef.current = initialInteractionMode;
+      pendingAutoZoomRestoreRef.current = false;
+      setInteractionMode(initialInteractionMode);
       setPopulation(nextInitialGameViewState.population);
 
       redrawUniverse({
@@ -407,72 +516,10 @@ export function GameOfLifeSession({
         zoomFactor: AUTO_FIT_ZOOM_FACTOR,
       });
     },
-    [redrawUniverse],
+    [initialInteractionMode, redrawUniverse, resetCanvasInteractions],
   );
 
-  const advanceLife = useCallback(() => {
-    const nextUniverse = nextGeneration(universeRef.current);
-    const nextPatternCells = getFreeFlyingPatternCells(nextUniverse);
-    const nextPopulation = countPopulation(nextUniverse);
-
-    universeRef.current = nextUniverse;
-    patternCellsRef.current = nextPatternCells;
-    setUniverse(nextUniverse);
-    setPatternCells(nextPatternCells);
-    setGeneration((value) => value + 1);
-    setPopulation(nextPopulation);
-
-    if (nextPopulation === 0) {
-      stopSimulation();
-      setHasStartedOnce(false);
-    }
-  }, [stopSimulation]);
-
-  const handleStart = useCallback(() => {
-    setIsRunning((current) => {
-      const nextRunningState = !current;
-
-      if (nextRunningState) {
-        setHasStartedOnce(true);
-      }
-
-      return nextRunningState;
-    });
-  }, []);
-
-  const handleZoomIn = useCallback(() => {
-    const canvas = canvasRef.current;
-
-    if (!canvas) {
-      return;
-    }
-
-    const canvasRect = canvas.getBoundingClientRect();
-
-    zoomViewportAtClientPoint(
-      canvasRect.left + canvasRect.width / 2,
-      canvasRect.top + canvasRect.height / 2,
-      ZOOM_STEP,
-    );
-  }, [zoomViewportAtClientPoint]);
-
-  const handleZoomOut = useCallback(() => {
-    const canvas = canvasRef.current;
-
-    if (!canvas) {
-      return;
-    }
-
-    const canvasRect = canvas.getBoundingClientRect();
-
-    zoomViewportAtClientPoint(
-      canvasRect.left + canvasRect.width / 2,
-      canvasRect.top + canvasRect.height / 2,
-      1 / ZOOM_STEP,
-    );
-  }, [zoomViewportAtClientPoint]);
-
-  const handleFit = useCallback(() => {
+  const enableAutoZoomForCurrentUniverse = useCallback(() => {
     const canvas = canvasRef.current;
     const nextAutofitUniverse = getAutofitUniverse(
       universeRef.current,
@@ -512,21 +559,135 @@ export function GameOfLifeSession({
       }
     }
 
-    activePointersRef.current.clear();
-    pinchGestureRef.current = null;
+    resetCanvasInteractions();
     viewportCenterRef.current = nextViewportCenter;
     largestViewportBaseSpanRef.current = nextViewportBaseSpan;
     setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
     setIsAutoZoomEnabled(true);
     zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
     isAutoZoomEnabledRef.current = true;
+    pendingAutoZoomRestoreRef.current = false;
 
     redrawUniverse({
       isAutoZoomEnabled: true,
       viewportCenter: nextViewportCenter,
       zoomFactor: AUTO_FIT_ZOOM_FACTOR,
     });
-  }, [redrawUniverse]);
+  }, [redrawUniverse, resetCanvasInteractions]);
+
+  const advanceLife = useCallback(() => {
+    const nextUniverse = nextGeneration(universeRef.current);
+    const nextPatternCells = getFreeFlyingPatternCells(nextUniverse);
+    const nextPopulation = countPopulation(nextUniverse);
+
+    universeRef.current = nextUniverse;
+    patternCellsRef.current = nextPatternCells;
+    setUniverse(nextUniverse);
+    setPatternCells(nextPatternCells);
+    setGeneration((value) => value + 1);
+    setPopulation(nextPopulation);
+
+    if (nextPopulation === 0) {
+      setInteractionMode(pausedInteractionModeRef.current);
+      stopSimulation();
+      setHasStartedOnce(false);
+    }
+  }, [stopSimulation]);
+
+  const handleStart = useCallback(() => {
+    setIsRunning((current) => {
+      if (!current && universeRef.current.size === 0) {
+        return current;
+      }
+
+      const nextRunningState = !current;
+
+      if (nextRunningState) {
+        resetCanvasInteractions();
+        setHasStartedOnce(true);
+        if (pendingAutoZoomRestoreRef.current) {
+          enableAutoZoomForCurrentUniverse();
+        }
+        pendingAutoZoomRestoreRef.current = false;
+        pausedInteractionModeRef.current = interactionModeRef.current;
+        setInteractionMode("pan");
+      } else {
+        setInteractionMode(pausedInteractionModeRef.current);
+      }
+
+      return nextRunningState;
+    });
+  }, [enableAutoZoomForCurrentUniverse, resetCanvasInteractions]);
+
+  const handleZoomIn = useCallback(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+
+    zoomViewportAtClientPoint(
+      canvasRect.left + canvasRect.width / 2,
+      canvasRect.top + canvasRect.height / 2,
+      ZOOM_STEP,
+    );
+  }, [zoomViewportAtClientPoint]);
+
+  const handleZoomOut = useCallback(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+
+    zoomViewportAtClientPoint(
+      canvasRect.left + canvasRect.width / 2,
+      canvasRect.top + canvasRect.height / 2,
+      1 / ZOOM_STEP,
+    );
+  }, [zoomViewportAtClientPoint]);
+
+  const handleFit = useCallback(() => {
+    enableAutoZoomForCurrentUniverse();
+  }, [enableAutoZoomForCurrentUniverse]);
+
+  const handleClear = useCallback(() => {
+    const shouldRestoreAutoZoom =
+      isAutoZoomEnabledRef.current || pendingAutoZoomRestoreRef.current;
+    const nextUniverse = new Set<string>();
+    const nextPatternCells = getFreeFlyingPatternCells(nextUniverse);
+    const clearedViewState = createInitialGameViewState([], {
+      emptyViewportBaseSpan: PLAYGROUND_INITIAL_VIEWPORT_BASE_SPAN,
+    });
+
+    resetCanvasInteractions();
+    autofitBoundsRef.current = null;
+    largestViewportBaseSpanRef.current = clearedViewState.viewportBaseSpan;
+    viewportCenterRef.current = clearedViewState.viewportCenter;
+    isAutoZoomEnabledRef.current = false;
+    setIsAutoZoomEnabled(false);
+    zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
+    setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
+    pendingAutoZoomRestoreRef.current = shouldRestoreAutoZoom;
+    universeRef.current = nextUniverse;
+    patternCellsRef.current = nextPatternCells;
+    setUniverse(nextUniverse);
+    setPatternCells(nextPatternCells);
+    setGeneration(0);
+    setHasStartedOnce(false);
+    setPopulation(0);
+    redrawUniverse({
+      isAutoZoomEnabled: false,
+      patternCells: nextPatternCells,
+      universe: nextUniverse,
+      viewportCenter: clearedViewState.viewportCenter,
+      zoomFactor: AUTO_FIT_ZOOM_FACTOR,
+    });
+  }, [redrawUniverse, resetCanvasInteractions]);
 
   const handleCanvasWheel = useCallback(
     (event: ReactWheelEvent<HTMLCanvasElement>) => {
@@ -545,6 +706,46 @@ export function GameOfLifeSession({
         return;
       }
 
+      if (!isRunning && interactionMode === "edit") {
+        const canvas = canvasRef.current;
+        const shouldRestoreAutoZoom =
+          isAutoZoomEnabledRef.current || pendingAutoZoomRestoreRef.current;
+
+        if (!canvas) {
+          return;
+        }
+
+        const canvasMetrics = getCanvasViewportMetrics(
+          canvas,
+          largestViewportBaseSpanRef.current,
+          viewportCenterRef.current,
+          zoomFactorRef.current,
+        );
+        const { worldX, worldY } = getClientPointWorldCoordinates(
+          canvasMetrics,
+          event.clientX,
+          event.clientY,
+        );
+        const toggledCellKeys = new Set<string>();
+
+        toggleCellsAlongWorldSegment(
+          worldX,
+          worldY,
+          worldX,
+          worldY,
+          toggledCellKeys,
+        );
+        editStrokeRef.current = {
+          lastWorldX: worldX,
+          lastWorldY: worldY,
+          pointerId: event.pointerId,
+          shouldRestoreAutoZoom,
+          toggledCellKeys,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+
       activePointersRef.current.set(event.pointerId, {
         clientX: event.clientX,
         clientY: event.clientY,
@@ -552,11 +753,47 @@ export function GameOfLifeSession({
       event.currentTarget.setPointerCapture(event.pointerId);
       pinchGestureRef.current = getPinchGesture(activePointersRef.current);
     },
-    [],
+    [interactionMode, isRunning, toggleCellsAlongWorldSegment],
   );
 
   const handleCanvasPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (!isRunning && interactionMode === "edit") {
+        const editStroke = editStrokeRef.current;
+        const canvas = canvasRef.current;
+
+        if (
+          !editStroke ||
+          editStroke.pointerId !== event.pointerId ||
+          !canvas
+        ) {
+          return;
+        }
+
+        const canvasMetrics = getCanvasViewportMetrics(
+          canvas,
+          largestViewportBaseSpanRef.current,
+          viewportCenterRef.current,
+          zoomFactorRef.current,
+        );
+        const { worldX, worldY } = getClientPointWorldCoordinates(
+          canvasMetrics,
+          event.clientX,
+          event.clientY,
+        );
+
+        toggleCellsAlongWorldSegment(
+          editStroke.lastWorldX,
+          editStroke.lastWorldY,
+          worldX,
+          worldY,
+          editStroke.toggledCellKeys,
+        );
+        editStroke.lastWorldX = worldX;
+        editStroke.lastWorldY = worldY;
+        return;
+      }
+
       const previousPointer = activePointersRef.current.get(event.pointerId);
 
       if (!previousPointer) {
@@ -611,11 +848,26 @@ export function GameOfLifeSession({
         event.clientY - previousPointer.clientY,
       );
     },
-    [panViewportByPixels, zoomViewportAtClientPoint],
+    [
+      interactionMode,
+      isRunning,
+      panViewportByPixels,
+      toggleCellsAlongWorldSegment,
+      zoomViewportAtClientPoint,
+    ],
   );
 
   const handleCanvasPointerUp = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const completedEditStroke =
+        editStrokeRef.current?.pointerId === event.pointerId
+          ? editStrokeRef.current
+          : null;
+
+      if (completedEditStroke) {
+        editStrokeRef.current = null;
+      }
+
       activePointersRef.current.delete(event.pointerId);
 
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -623,8 +875,21 @@ export function GameOfLifeSession({
       }
 
       pinchGestureRef.current = getPinchGesture(activePointersRef.current);
+
+      if (completedEditStroke?.shouldRestoreAutoZoom) {
+        pendingAutoZoomRestoreRef.current = true;
+      }
     },
     [],
+  );
+
+  const handleInteractionModeChange = useCallback(
+    (nextMode: GameOfLifeInteractionMode) => {
+      resetCanvasInteractions();
+      pausedInteractionModeRef.current = nextMode;
+      setInteractionMode(nextMode);
+    },
+    [resetCanvasInteractions],
   );
 
   const handleSpeedChange = useCallback(
@@ -732,6 +997,10 @@ export function GameOfLifeSession({
   }, [isAutoZoomEnabled]);
 
   useEffect(() => {
+    interactionModeRef.current = interactionMode;
+  }, [interactionMode]);
+
+  useEffect(() => {
     zoomFactorRef.current = zoomFactor;
   }, [zoomFactor]);
 
@@ -739,7 +1008,12 @@ export function GameOfLifeSession({
     stopSimulation();
     clearCopyFeedbackTimer();
     clearShareFeedbackTimer();
-    const nextInitialGameViewState = createInitialGameViewState(seed);
+    const nextInitialGameViewState = createInitialGameViewState(seed, {
+      emptyViewportBaseSpan:
+        mode === "playground"
+          ? PLAYGROUND_INITIAL_VIEWPORT_BASE_SPAN
+          : undefined,
+    });
 
     initialGameViewStateRef.current = nextInitialGameViewState;
     setCopyFeedback("idle");
@@ -749,6 +1023,7 @@ export function GameOfLifeSession({
     clearCopyFeedbackTimer,
     clearShareFeedbackTimer,
     restoreInitialGameView,
+    mode,
     seed,
     stopSimulation,
   ]);
@@ -828,6 +1103,7 @@ export function GameOfLifeSession({
     return () => {
       activePointersRef.current.clear();
       pinchGestureRef.current = null;
+      editStrokeRef.current = null;
       clearCopyFeedbackTimer();
       clearShareFeedbackTimer();
       stopSimulation();
@@ -836,6 +1112,7 @@ export function GameOfLifeSession({
 
   const speedSliderValue = MAX_TICK_DELAY_MS + MIN_TICK_DELAY_MS - tickDelayMs;
   const canShareCurrentUrl =
+    mode === "qr" &&
     typeof navigator !== "undefined" &&
     (typeof navigator.share === "function" ||
       typeof navigator.clipboard?.writeText === "function");
@@ -844,6 +1121,11 @@ export function GameOfLifeSession({
     : hasStartedOnce
       ? "Resume"
       : "Start";
+  const isStartDisabled = !isRunning && population === 0;
+  const canvasCursorClass =
+    !isRunning && interactionMode === "edit"
+      ? "cursor-crosshair"
+      : "cursor-grab active:cursor-grabbing";
   const currentAutofitUniverse = getAutofitUniverse(
     universe,
     patternCells.excludedCells,
@@ -893,14 +1175,18 @@ export function GameOfLifeSession({
                 onPointerMove={handleCanvasPointerMove}
                 onPointerUp={handleCanvasPointerUp}
                 onWheel={handleCanvasWheel}
-                className="h-full w-full touch-none cursor-grab active:cursor-grabbing"
+                className={`h-full w-full touch-none ${canvasCursorClass}`}
               />
 
               <GameOfLifeCanvasOverlay
                 debugSnapshot={currentDebugSnapshot}
                 generation={generation}
+                interactionMode={interactionMode}
                 isAutoZoomEnabled={isAutoZoomEnabled}
+                isRunning={isRunning}
+                onClear={handleClear}
                 onFit={handleFit}
+                onInteractionModeChange={handleInteractionModeChange}
                 onSpeedChange={handleSpeedChange}
                 onZoomIn={handleZoomIn}
                 onZoomOut={handleZoomOut}
@@ -923,6 +1209,9 @@ export function GameOfLifeSession({
             onStart={handleStart}
             qrValue={qrValue}
             shareFeedback={shareFeedback}
+            showQrDetails={mode === "qr"}
+            showReset={mode === "qr"}
+            startDisabled={isStartDisabled}
             startButtonLabel={startButtonLabel}
           />
         </div>

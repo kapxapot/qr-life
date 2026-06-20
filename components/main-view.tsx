@@ -24,6 +24,7 @@ import Footer from "./footer";
 
 type ScanResult = {
   encodedQr: string | null;
+  mode: "playground" | "qr";
   qrValue: string | null;
   seed: LifeGrid;
 };
@@ -32,6 +33,8 @@ type SharedScanParseResult = {
   invalidMessage: string | null;
   scanResult: ScanResult | null;
 };
+
+const PLAYGROUND_SEED: LifeGrid = [];
 
 function syncShareUrl(encodedQr: string | null, qrValue: string | null) {
   if (typeof window === "undefined") {
@@ -61,6 +64,7 @@ function parseSharedScanFromSearch(search: string): SharedScanParseResult {
           invalidMessage: null,
           scanResult: {
             encodedQr: null,
+            mode: "qr",
             qrValue: value,
             seed: createQrSeedFromText(value),
           },
@@ -89,6 +93,7 @@ function parseSharedScanFromSearch(search: string): SharedScanParseResult {
       invalidMessage: null,
       scanResult: {
         encodedQr,
+        mode: "qr",
         qrValue: value,
         seed: decodeSharedQrSeed(encodedQr),
       },
@@ -221,6 +226,7 @@ export function MainView() {
       <section className="relative h-full w-full overflow-hidden">
         <GameOfLife
           debug={gameDebugEnabled}
+          mode={scanResult.mode}
           onScanAnother={() => {
             setShouldAutoStartScanner(true);
             setScanResult(null);
@@ -258,6 +264,7 @@ export function MainView() {
                 setShouldAutoStartScanner(false);
                 setScanResult({
                   encodedQr: encodeSharedQrSeed(seed),
+                  mode: "qr",
                   qrValue,
                   seed,
                 });
@@ -271,11 +278,21 @@ export function MainView() {
             setShouldAutoStartScanner(false);
             setScanResult({
               encodedQr: null,
+              mode: "qr",
               qrValue,
               seed,
             });
           }}
           onOpenChange={setIsGeneratorOpen}
+          onPlayground={() => {
+            setShouldAutoStartScanner(false);
+            setScanResult({
+              encodedQr: null,
+              mode: "playground",
+              qrValue: null,
+              seed: PLAYGROUND_SEED,
+            });
+          }}
         />
 
         {!isGeneratorOpen && <Footer />}

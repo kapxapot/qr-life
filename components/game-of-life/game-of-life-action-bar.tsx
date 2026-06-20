@@ -14,6 +14,9 @@ type Props = {
   onStart: () => void;
   qrValue: string | null;
   shareFeedback: ShareFeedbackState;
+  showQrDetails: boolean;
+  showReset: boolean;
+  startDisabled: boolean;
   startButtonLabel: string;
 };
 
@@ -27,6 +30,9 @@ export function GameOfLifeActionBar({
   onStart,
   qrValue,
   shareFeedback,
+  showQrDetails,
+  showReset,
+  startDisabled,
   startButtonLabel,
 }: Props) {
   const copyButtonLabel =
@@ -57,58 +63,63 @@ export function GameOfLifeActionBar({
       <div className="flex flex-wrap gap-3 justify-end sm:justify-center">
         <Button
           onClick={onScanAnother}
-          variant="quiet"
-          className="h-auto px-5 py-2.5 text-sm font-semibold"
-        >
-          New
-        </Button>
-
-        <Button
-          onClick={onReset}
           variant="glass"
           className="h-auto px-5 py-2.5 text-sm font-semibold"
         >
-          Reset
+          Home
         </Button>
+
+        {showReset && (
+          <Button
+            onClick={onReset}
+            variant="glass"
+            className="h-auto px-5 py-2.5 text-sm font-semibold"
+          >
+            Reset
+          </Button>
+        )}
 
         <Button
           onClick={onStart}
           variant="aurora"
+          disabled={startDisabled}
           className="h-auto px-5 py-2.5 text-sm font-semibold"
         >
           {startButtonLabel}
         </Button>
 
-        <div className="relative min-w-40 max-w-80 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 lg:w-80 lg:flex-none">
-          <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
-            {qrValue ?? "No QR captured yet."}
-          </p>
-          <div className="absolute inset-y-0 right-2 flex items-center">
-            <Button
-              type="button"
-              onClick={onCopyQrValue}
-              variant="quiet"
-              className="h-8 min-w-8 rounded-full bg-slate-900/88 px-0 text-slate-200 hover:bg-slate-800"
-              disabled={!qrValue}
-              aria-label={copyButtonLabel}
-              title={copyButtonLabel}
-            >
-              <CopyButtonIcon className="size-4" />
-            </Button>
+        {showQrDetails && (
+          <div className="relative min-w-40 max-w-80 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 lg:w-80 lg:flex-none">
+            <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
+              {qrValue ?? "No QR captured yet."}
+            </p>
+            <div className="absolute inset-y-0 right-2 flex items-center">
+              <Button
+                type="button"
+                onClick={onCopyQrValue}
+                variant="quiet"
+                className="h-8 min-w-8 rounded-full bg-slate-900/88 px-0 text-slate-200 hover:bg-slate-800"
+                disabled={!qrValue}
+                aria-label={copyButtonLabel}
+              >
+                <CopyButtonIcon className="size-4" />
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
 
-        <Button
-          type="button"
-          onClick={onShareCurrentUrl}
-          variant="quiet"
-          className="size-11 shrink-0 rounded-full border-white/10 bg-slate-950/70 text-slate-200 hover:bg-slate-900/88"
-          disabled={!canShareCurrentUrl}
-          aria-label={shareButtonLabel}
-          title={shareButtonLabel}
-        >
-          <ShareButtonIcon className="size-4" />
-        </Button>
+        {showQrDetails && (
+          <Button
+            type="button"
+            onClick={onShareCurrentUrl}
+            variant="quiet"
+            className="size-11 shrink-0 rounded-full border-white/10 bg-slate-950/70 text-slate-200 hover:bg-slate-900/88"
+            disabled={!canShareCurrentUrl}
+            aria-label={shareButtonLabel}
+          >
+            <ShareButtonIcon className="size-4" />
+          </Button>
+        )}
       </div>
     </div>
   );

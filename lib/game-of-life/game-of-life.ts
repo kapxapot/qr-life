@@ -78,6 +78,10 @@ function toCellKey(x: number, y: number) {
   return `${x}:${y}`;
 }
 
+export function getLifeCellKey(x: number, y: number) {
+  return toCellKey(x, y);
+}
+
 function fromCellKey(key: string): CellPosition {
   const [xValue = "0", yValue = "0"] = key.split(":");
 
@@ -456,4 +460,15 @@ export function hasLiveCell(
   y: number,
 ): boolean {
   return universe.has(toCellKey(x, y));
+}
+
+export function toggleLifeCell(universe: LifeUniverse, x: number, y: number) {
+  const cellKey = toCellKey(x, y);
+
+  if (universe.has(cellKey)) {
+    universe.delete(cellKey);
+    return;
+  }
+
+  universe.add(cellKey);
 }

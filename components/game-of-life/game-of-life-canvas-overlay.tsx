@@ -1,13 +1,22 @@
+import { RiDeleteBinLine } from "@remixicon/react";
 import type { ChangeEvent } from "react";
 import { GameOfLifeDebugPanel } from "@/components/game-of-life/game-of-life-debug-panel";
+import {
+  type GameOfLifeInteractionMode,
+  GameOfLifeModeSwitch,
+} from "@/components/game-of-life/game-of-life-mode-switch";
 import { Button } from "@/components/ui/button";
 import type { LifeDebugSnapshot } from "@/lib/game-of-life/game-of-life-debug";
 
 type Props = {
   debugSnapshot: LifeDebugSnapshot | null;
   generation: number;
+  interactionMode: GameOfLifeInteractionMode;
   isAutoZoomEnabled: boolean;
+  isRunning: boolean;
+  onClear: () => void;
   onFit: () => void;
+  onInteractionModeChange: (nextMode: GameOfLifeInteractionMode) => void;
   onSpeedChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -21,8 +30,12 @@ type Props = {
 export function GameOfLifeCanvasOverlay({
   debugSnapshot,
   generation,
+  interactionMode,
   isAutoZoomEnabled,
+  isRunning,
+  onClear,
   onFit,
+  onInteractionModeChange,
   onSpeedChange,
   onZoomIn,
   onZoomOut,
@@ -71,7 +84,7 @@ export function GameOfLifeCanvasOverlay({
               step={speedSliderStep}
               value={speedSliderValue}
               onChange={onSpeedChange}
-              className="h-1.5 w-28 cursor-pointer accent-cyan-300"
+              className="h-1.5 w-20 sm:w-28 cursor-pointer accent-cyan-300"
               aria-label="Simulation speed"
             />
           </label>
@@ -110,6 +123,26 @@ export function GameOfLifeCanvasOverlay({
           </div>
         </div>
       </div>
+
+      {!isRunning && (
+        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-2 sm:bottom-4">
+          <GameOfLifeModeSwitch
+            interactionMode={interactionMode}
+            onInteractionModeChange={onInteractionModeChange}
+          />
+          <Button
+            type="button"
+            variant="glass"
+            size="icon"
+            aria-label="Clear cells"
+            disabled={interactionMode !== "edit"}
+            onClick={onClear}
+            className="size-7 sm:size-11"
+          >
+            <RiDeleteBinLine className="size-4 sm:size-6" />
+          </Button>
+        </div>
+      )}
     </>
   );
 }

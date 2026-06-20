@@ -5,7 +5,10 @@ import { QrScannerDebugPanel } from "@/components/qr-scanner/qr-scanner-debug-pa
 import { Button } from "@/components/ui/button";
 import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
 import { type JsQrBitMatrix, jsQr } from "@/lib/qr/jsqr";
-import { getCameraAccessMessage, type ScannerStatus } from "@/lib/qr/qr-scanner";
+import {
+  getCameraAccessMessage,
+  type ScannerStatus,
+} from "@/lib/qr/qr-scanner";
 import {
   createInitialDebugSnapshot,
   getDetectionPlausibility,
