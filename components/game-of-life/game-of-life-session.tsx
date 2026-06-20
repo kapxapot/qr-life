@@ -711,6 +711,12 @@ export function GameOfLifeSession({
       }
 
       if (!isRunning && interactionMode === "edit") {
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          // Touch drawing is a custom gesture, so suppress compatibility mouse
+          // events that can interfere with the next tap on mobile controls.
+          event.preventDefault();
+        }
+
         const canvas = canvasRef.current;
         const shouldRestoreAutoZoom =
           isAutoZoomEnabledRef.current || pendingAutoZoomRestoreRef.current;
