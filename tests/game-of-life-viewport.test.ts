@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getBoundsCenter,
   getExpandedBounds,
   getRequiredViewportBaseSpanForBounds,
   getViewportCenterForBounds,
@@ -96,5 +97,18 @@ describe("getViewportCenterForBounds", () => {
         41,
       ),
     ).toEqual({ x: 55, y: 0 });
+  });
+});
+
+describe("getBoundsCenter", () => {
+  it("returns the midpoint of the tracked bounds for fit recentering", () => {
+    expect(
+      getBoundsCenter({
+        maxX: 110,
+        maxY: 14,
+        minX: 0,
+        minY: -10,
+      }),
+    ).toEqual({ x: 55, y: 2 });
   });
 });

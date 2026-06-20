@@ -84,6 +84,13 @@ export function getExpandedBounds(
   };
 }
 
+export function getBoundsCenter(bounds: UniverseBounds): ViewportCenter {
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  };
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }

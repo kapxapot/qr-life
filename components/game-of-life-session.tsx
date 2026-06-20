@@ -56,6 +56,7 @@ import {
   type LifeDebugSnapshot,
 } from "@/lib/game-of-life-debug";
 import {
+  getBoundsCenter,
   getExpandedBounds,
   getRequiredViewportBaseSpanForBounds,
 } from "@/lib/game-of-life-viewport";
@@ -491,13 +492,6 @@ export function GameOfLifeSession({
           canvas.clientHeight || canvas.getBoundingClientRect().height,
         ),
       );
-      const currentViewport = buildViewport(
-        largestViewportBaseSpanRef.current,
-        viewportCenterRef.current,
-        zoomFactorRef.current,
-        renderedCanvasWidth,
-        renderedCanvasHeight,
-      );
       const nextAutofitBounds = getPaddedUniverseBounds(
         nextAutofitUniverse,
         nextAutofitUniverse,
@@ -512,14 +506,7 @@ export function GameOfLifeSession({
           renderedCanvasHeight,
           MIN_VIEWPORT_SPAN,
         );
-        nextViewportCenter = getAutofitViewportCenter(
-          currentViewport,
-          nextAutofitBounds,
-          nextViewportBaseSpan,
-          AUTO_FIT_ZOOM_FACTOR,
-          renderedCanvasWidth,
-          renderedCanvasHeight,
-        );
+        nextViewportCenter = getBoundsCenter(nextAutofitBounds);
       } else {
         autofitBoundsRef.current = null;
       }
