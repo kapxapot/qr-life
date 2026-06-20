@@ -586,13 +586,17 @@ export function GameOfLifeSession({
     setPatternCells(nextPatternCells);
     setGeneration((value) => value + 1);
     setPopulation(nextPopulation);
+    redrawUniverse({
+      patternCells: nextPatternCells,
+      universe: nextUniverse,
+    });
 
     if (nextPopulation === 0) {
       setInteractionMode(pausedInteractionModeRef.current);
       stopSimulation();
       setHasStartedOnce(false);
     }
-  }, [stopSimulation]);
+  }, [redrawUniverse, stopSimulation]);
 
   const handleStart = useCallback(() => {
     setIsRunning((current) => {
@@ -1029,13 +1033,8 @@ export function GameOfLifeSession({
   ]);
 
   useEffect(() => {
-    redrawUniverse({
-      patternCells,
-      isAutoZoomEnabled,
-      universe,
-      zoomFactor,
-    });
-  }, [isAutoZoomEnabled, patternCells, redrawUniverse, universe, zoomFactor]);
+    redrawUniverse();
+  }, [redrawUniverse]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
