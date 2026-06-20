@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   GameOfLifeSession,
   type GameOfLifeSessionProps,
-} from "@/components/game-of-life-session";
+} from "@/components/game-of-life/game-of-life-session";
 
 type Props = Omit<GameOfLifeSessionProps, "onReset">;
 

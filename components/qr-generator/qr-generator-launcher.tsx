@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { QrGeneratorDialog } from "@/components/qr-generator-dialog";
+import { QrGeneratorDialog } from "@/components/qr-generator/qr-generator-dialog";
 import { Button } from "@/components/ui/button";
-import type { LifeGrid } from "@/lib/game-of-life";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
 
 type Props = {
   onGenerate: (seed: LifeGrid, qrValue: string) => void;

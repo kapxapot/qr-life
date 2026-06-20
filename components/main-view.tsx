@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GameOfLife } from "@/components/game-of-life";
-import { QrGeneratorLauncher } from "@/components/qr-generator-launcher";
-import { QrScanner } from "@/components/qr-scanner";
+import { GameOfLife } from "@/components/game-of-life/game-of-life";
+import { QrGeneratorLauncher } from "@/components/qr-generator/qr-generator-launcher";
+import { QrScanner } from "@/components/qr-scanner/qr-scanner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,9 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { LifeGrid } from "@/lib/game-of-life";
-import { decodeSharedQrSeed, encodeSharedQrSeed } from "@/lib/qr-share";
-import { createQrSeedFromText } from "@/lib/qr-generator";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
+import { decodeSharedQrSeed, encodeSharedQrSeed } from "@/lib/qr/qr-share";
+import { createQrSeedFromText } from "@/lib/qr/qr-generator";
 import Footer from "./footer";
 
 type ScanResult = {

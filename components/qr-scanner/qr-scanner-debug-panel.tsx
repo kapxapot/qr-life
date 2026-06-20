@@ -1,9 +1,9 @@
-import type { ScannerStatus } from "@/lib/qr-scanner";
+import type { ScannerStatus } from "@/lib/qr/qr-scanner";
 import {
   formatDebugStage,
   formatPercent,
   type ScannerDebugSnapshot,
-} from "@/lib/qr-scanner-debug";
+} from "@/lib/qr/qr-scanner-debug";
 
 type Props = {
   confirmationFrameTarget: number;

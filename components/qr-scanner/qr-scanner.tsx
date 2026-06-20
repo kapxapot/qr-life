@@ -1,19 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { QrScannerDebugPanel } from "@/components/qr-scanner-debug-panel";
+import { QrScannerDebugPanel } from "@/components/qr-scanner/qr-scanner-debug-panel";
 import { Button } from "@/components/ui/button";
-import type { LifeGrid } from "@/lib/game-of-life";
-import { type JsQrBitMatrix, jsQr } from "@/lib/jsqr";
-import { getCameraAccessMessage, type ScannerStatus } from "@/lib/qr-scanner";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
+import { type JsQrBitMatrix, jsQr } from "@/lib/qr/jsqr";
+import { getCameraAccessMessage, type ScannerStatus } from "@/lib/qr/qr-scanner";
 import {
   createInitialDebugSnapshot,
   getDetectionPlausibility,
   getPlausibilityRejectionReason,
   getQrLocationDiagnostics,
   type ScannerDebugSnapshot,
-} from "@/lib/qr-scanner-debug";
-import { createSeedFromQrMatrix } from "@/lib/qr-seed";
+} from "@/lib/qr/qr-scanner-debug";
+import { createSeedFromQrMatrix } from "@/lib/qr/qr-seed";
 
 type CameraPermissionState =
   | PermissionState

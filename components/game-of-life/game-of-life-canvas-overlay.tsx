@@ -1,7 +1,7 @@
 import type { ChangeEvent } from "react";
-import { GameOfLifeDebugPanel } from "@/components/game-of-life-debug-panel";
+import { GameOfLifeDebugPanel } from "@/components/game-of-life/game-of-life-debug-panel";
 import { Button } from "@/components/ui/button";
-import type { LifeDebugSnapshot } from "@/lib/game-of-life-debug";
+import type { LifeDebugSnapshot } from "@/lib/game-of-life/game-of-life-debug";
 
 type Props = {
   debugSnapshot: LifeDebugSnapshot | null;

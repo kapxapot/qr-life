@@ -1,5 +1,5 @@
 import qrcodeGenerator from "qrcode-generator";
-import type { LifeGrid } from "@/lib/game-of-life";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
 
 const UTF8_ENCODER = new TextEncoder();
 

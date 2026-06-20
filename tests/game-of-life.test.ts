@@ -5,7 +5,7 @@ import {
   getFreeFlyingPatternCells,
   type LifeUniverse,
   nextGeneration,
-} from "../lib/game-of-life";
+} from "../lib/game-of-life/game-of-life";
 
 type Point = {
   x: number;

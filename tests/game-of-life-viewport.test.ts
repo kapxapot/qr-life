@@ -4,7 +4,7 @@ import {
   getExpandedBounds,
   getRequiredViewportBaseSpanForBounds,
   getViewportCenterForBounds,
-} from "../lib/game-of-life-viewport";
+} from "../lib/game-of-life/game-of-life-viewport";
 
 describe("getExpandedBounds", () => {
   it("grows the tracked autofit envelope without letting it shrink", () => {

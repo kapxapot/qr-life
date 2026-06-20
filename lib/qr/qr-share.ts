@@ -1,4 +1,4 @@
-import type { LifeGrid } from "@/lib/game-of-life";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
 
 const SHARE_FORMAT_VERSION = 1;
 const QR_DIMENSION_MIN = 21;

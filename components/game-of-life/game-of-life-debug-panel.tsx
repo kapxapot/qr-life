@@ -1,7 +1,7 @@
 import {
   formatLifeBounds,
   type LifeDebugSnapshot,
-} from "@/lib/game-of-life-debug";
+} from "@/lib/game-of-life/game-of-life-debug";
 
 type Props = {
   debugSnapshot: LifeDebugSnapshot;

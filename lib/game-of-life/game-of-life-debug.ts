@@ -4,7 +4,7 @@ import {
   getUniverseBounds,
   type LifeUniverse,
   type UniverseBounds,
-} from "@/lib/game-of-life";
+} from "@/lib/game-of-life/game-of-life";
 
 export type LifeDebugSnapshot = {
   autofitBounds: UniverseBounds | null;

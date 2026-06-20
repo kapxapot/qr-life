@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useRef, useState } from "react";
-import { QrGeneratorPreview } from "@/components/qr-generator-preview";
+import { QrGeneratorPreview } from "@/components/qr-generator/qr-generator-preview";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,9 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { LifeGrid } from "@/lib/game-of-life";
-import { createQrSeedFromText } from "@/lib/qr-generator";
-import { downloadQrSvg } from "@/lib/qr-svg";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
+import { createQrSeedFromText } from "@/lib/qr/qr-generator";
+import { downloadQrSvg } from "@/lib/qr/qr-svg";
 
 type Props = {
   onGenerate: (seed: LifeGrid, qrValue: string) => void;

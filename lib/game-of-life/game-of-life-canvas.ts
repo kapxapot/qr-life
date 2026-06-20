@@ -9,14 +9,14 @@ import {
   type LifeGrid,
   type LifeUniverse,
   type UniverseBounds,
-} from "@/lib/game-of-life";
-import type { LifeDebugSnapshot } from "@/lib/game-of-life-debug";
+} from "@/lib/game-of-life/game-of-life";
+import type { LifeDebugSnapshot } from "@/lib/game-of-life/game-of-life-debug";
 import {
   getRequiredViewportBaseSpanForBounds,
   getViewportCenterForBounds,
   getViewportSpans,
   normalizeViewportSpanForAxis,
-} from "@/lib/game-of-life-viewport";
+} from "@/lib/game-of-life/game-of-life-viewport";
 
 const CANVAS_CELL_SIZE = 14;
 const GRIDLINE_CELL_INSET = 1;
@@ -27,7 +27,7 @@ const MIN_VISIBLE_LIVE_CELL_GAP_DEVICE_PIXELS = 2;
 const LIVE_CELL_COLOR = "#67e8f9";
 const GLIDER_CELL_COLOR = "#ffcc4a";
 const LWSS_CELL_COLOR = "#46ea82";
-const MWSS_CELL_COLOR = "#ff0228";
+const MWSS_CELL_COLOR = "#fe3856";
 const DEBUG_AUTOFIT_BOUNDS_COLOR = "#f43f5e";
 const DEBUG_UNIVERSE_BOUNDS_COLOR = "#22c55e";
 const DEBUG_AUTOFIT_EDGE_COLOR = "#f8fafc";

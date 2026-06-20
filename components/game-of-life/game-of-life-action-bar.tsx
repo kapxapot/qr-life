@@ -79,7 +79,7 @@ export function GameOfLifeActionBar({
           {startButtonLabel}
         </Button>
 
-        <div className="relative min-w-40 max-w-60 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 lg:w-80 lg:flex-none">
+        <div className="relative min-w-40 max-w-80 flex-1 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2.5 lg:w-80 lg:flex-none">
           <p className="truncate pr-10 font-mono text-xs leading-6 text-slate-300">
             {qrValue ?? "No QR captured yet."}
           </p>

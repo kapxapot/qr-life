@@ -1,4 +1,4 @@
-import type { UniverseBounds } from "@/lib/game-of-life";
+import type { UniverseBounds } from "@/lib/game-of-life/game-of-life";
 
 export type ViewportCenter = {
   x: number;

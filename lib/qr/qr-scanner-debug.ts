@@ -1,5 +1,5 @@
-import type { JsQrLocation } from "@/lib/jsqr";
-import { jsQr } from "@/lib/jsqr";
+import type { JsQrLocation } from "@/lib/qr/jsqr";
+import { jsQr } from "@/lib/qr/jsqr";
 
 type Point = {
   x: number;

@@ -1,7 +1,7 @@
 "use client";
 
-import type { LifeGrid } from "@/lib/game-of-life";
-import { getQrSvgPathData, getQrSvgViewBoxSize } from "@/lib/qr-svg";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
+import { getQrSvgPathData, getQrSvgViewBoxSize } from "@/lib/qr/qr-svg";
 
 type Props = {
   seed: LifeGrid;

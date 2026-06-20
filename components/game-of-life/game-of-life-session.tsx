@@ -10,8 +10,8 @@ import {
   type CopyFeedbackState,
   GameOfLifeActionBar,
   type ShareFeedbackState,
-} from "@/components/game-of-life-action-bar";
-import { GameOfLifeCanvasOverlay } from "@/components/game-of-life-canvas-overlay";
+} from "@/components/game-of-life/game-of-life-action-bar";
+import { GameOfLifeCanvasOverlay } from "@/components/game-of-life/game-of-life-canvas-overlay";
 import {
   cloneUniverse,
   countPopulation,
@@ -22,7 +22,7 @@ import {
   type LifeUniverse,
   nextGeneration,
   type UniverseBounds,
-} from "@/lib/game-of-life";
+} from "@/lib/game-of-life/game-of-life";
 import {
   AUTO_FIT_VIEWPORT_PADDING,
   AUTO_FIT_ZOOM_FACTOR,
@@ -50,16 +50,16 @@ import {
   type ViewportCenter,
   WHEEL_ZOOM_SENSITIVITY,
   ZOOM_STEP,
-} from "@/lib/game-of-life-canvas";
+} from "@/lib/game-of-life/game-of-life-canvas";
 import {
   createLifeDebugSnapshot,
   type LifeDebugSnapshot,
-} from "@/lib/game-of-life-debug";
+} from "@/lib/game-of-life/game-of-life-debug";
 import {
   getBoundsCenter,
   getExpandedBounds,
   getRequiredViewportBaseSpanForBounds,
-} from "@/lib/game-of-life-viewport";
+} from "@/lib/game-of-life/game-of-life-viewport";
 
 export type GameOfLifeSessionProps = {
   debug?: boolean;

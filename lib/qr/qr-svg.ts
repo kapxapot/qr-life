@@ -1,4 +1,4 @@
-import type { LifeGrid } from "@/lib/game-of-life";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
 
 export const QR_SVG_QUIET_ZONE_SIZE = 2;
 

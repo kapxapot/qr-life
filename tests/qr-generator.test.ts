@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { LifeGrid } from "../lib/game-of-life";
-import { jsQr } from "../lib/jsqr";
-import { createQrSeedFromText } from "../lib/qr-generator";
+import type { LifeGrid } from "../lib/game-of-life/game-of-life";
+import { jsQr } from "../lib/qr/jsqr";
+import { createQrSeedFromText } from "../lib/qr/qr-generator";
 
 const MODULE_SIZE = 8;
 const QUIET_ZONE_SIZE = 4;

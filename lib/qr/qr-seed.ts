@@ -1,5 +1,5 @@
-import type { LifeGrid } from "@/lib/game-of-life";
-import type { JsQrBitMatrix } from "@/lib/jsqr";
+import type { LifeGrid } from "@/lib/game-of-life/game-of-life";
+import type { JsQrBitMatrix } from "@/lib/qr/jsqr";
 
 export function createSeedFromQrMatrix(matrix: JsQrBitMatrix): LifeGrid {
   if (matrix.width <= 0 || matrix.height <= 0) {
