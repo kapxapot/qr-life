@@ -182,11 +182,62 @@ export function GameOfLifeSession({
     }
   }, []);
 
+  const releaseCanvasPointerCapture = useCallback((pointerId: number) => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    try {
+      if (canvas.hasPointerCapture(pointerId)) {
+        canvas.releasePointerCapture(pointerId);
+      }
+    } catch {}
+  }, []);
+
+  const finishPointerInteraction = useCallback(
+    (pointerId: number, options?: { releaseCapture?: boolean }) => {
+      const completedEditStroke =
+        editStrokeRef.current?.pointerId === pointerId
+          ? editStrokeRef.current
+          : null;
+
+      if (completedEditStroke) {
+        editStrokeRef.current = null;
+
+        if (completedEditStroke.shouldRestoreAutoZoom) {
+          pendingAutoZoomRestoreRef.current = true;
+        }
+      }
+
+      activePointersRef.current.delete(pointerId);
+
+      if (options?.releaseCapture ?? true) {
+        releaseCanvasPointerCapture(pointerId);
+      }
+
+      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
+    },
+    [releaseCanvasPointerCapture],
+  );
+
   const resetCanvasInteractions = useCallback(() => {
+    const activePointerIds = new Set(activePointersRef.current.keys());
+    const editStrokePointerId = editStrokeRef.current?.pointerId;
+
+    if (editStrokePointerId !== undefined) {
+      activePointerIds.add(editStrokePointerId);
+    }
+
+    for (const pointerId of activePointerIds) {
+      releaseCanvasPointerCapture(pointerId);
+    }
+
     activePointersRef.current.clear();
     pinchGestureRef.current = null;
     editStrokeRef.current = null;
-  }, []);
+  }, [releaseCanvasPointerCapture]);
 
   const redrawUniverse = useCallback(
     (options?: RedrawOptions) => {
@@ -752,7 +803,6 @@ export function GameOfLifeSession({
           shouldRestoreAutoZoom,
           toggledCellKeys,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
         return;
       }
 
@@ -778,6 +828,10 @@ export function GameOfLifeSession({
           !canvas
         ) {
           return;
+        }
+
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          event.preventDefault();
         }
 
         const canvasMetrics = getCanvasViewportMetrics(
@@ -875,22 +929,21 @@ export function GameOfLifeSession({
           : null;
 
       if (completedEditStroke) {
-        editStrokeRef.current = null;
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          event.preventDefault();
+        }
       }
 
-      activePointersRef.current.delete(event.pointerId);
-
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-
-      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
-
-      if (completedEditStroke?.shouldRestoreAutoZoom) {
-        pendingAutoZoomRestoreRef.current = true;
-      }
+      finishPointerInteraction(event.pointerId);
     },
-    [],
+    [finishPointerInteraction],
+  );
+
+  const handleCanvasLostPointerCapture = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      finishPointerInteraction(event.pointerId, { releaseCapture: false });
+    },
+    [finishPointerInteraction],
   );
 
   const handleInteractionModeChange = useCallback(
@@ -1043,6 +1096,78 @@ export function GameOfLifeSession({
   }, [redrawUniverse]);
 
   useEffect(() => {
+    const hasActiveCanvasInteraction = () =>
+      editStrokeRef.current !== null || activePointersRef.current.size > 0;
+
+    const finishActivePointers = () => {
+      if (!hasActiveCanvasInteraction()) {
+        return;
+      }
+
+      const activePointerIds = new Set(activePointersRef.current.keys());
+      const editStrokePointerId = editStrokeRef.current?.pointerId;
+
+      if (editStrokePointerId !== undefined) {
+        activePointerIds.add(editStrokePointerId);
+      }
+
+      for (const pointerId of activePointerIds) {
+        finishPointerInteraction(pointerId);
+      }
+    };
+
+    const handleWindowPointerEnd = (event: PointerEvent) => {
+      if (
+        editStrokeRef.current?.pointerId !== event.pointerId &&
+        !activePointersRef.current.has(event.pointerId)
+      ) {
+        return;
+      }
+
+      finishPointerInteraction(event.pointerId);
+    };
+
+    const handleWindowTouchEnd = () => {
+      finishActivePointers();
+    };
+
+    const handleWindowBlur = () => {
+      if (!hasActiveCanvasInteraction()) {
+        return;
+      }
+
+      resetCanvasInteractions();
+    };
+
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" ||
+        !hasActiveCanvasInteraction()
+      ) {
+        return;
+      }
+
+      resetCanvasInteractions();
+    };
+
+    window.addEventListener("pointerup", handleWindowPointerEnd, true);
+    window.addEventListener("pointercancel", handleWindowPointerEnd, true);
+    window.addEventListener("touchend", handleWindowTouchEnd, true);
+    window.addEventListener("touchcancel", handleWindowTouchEnd, true);
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pointerup", handleWindowPointerEnd, true);
+      window.removeEventListener("pointercancel", handleWindowPointerEnd, true);
+      window.removeEventListener("touchend", handleWindowTouchEnd, true);
+      window.removeEventListener("touchcancel", handleWindowTouchEnd, true);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [finishPointerInteraction, resetCanvasInteractions]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
 
     if (!canvas || typeof ResizeObserver === "undefined") {
@@ -1177,6 +1302,7 @@ export function GameOfLifeSession({
                 ref={canvasRef}
                 onPointerCancel={handleCanvasPointerUp}
                 onPointerDown={handleCanvasPointerDown}
+                onLostPointerCapture={handleCanvasLostPointerCapture}
                 onPointerMove={handleCanvasPointerMove}
                 onPointerUp={handleCanvasPointerUp}
                 onWheel={handleCanvasWheel}
