@@ -145,6 +145,9 @@ export function GameOfLifeSession({
   const [hasStartedOnce, setHasStartedOnce] = useState(false);
   const [hasLoadedTickDelayPreference, setHasLoadedTickDelayPreference] =
     useState(false);
+  const [interactionDebugLines, setInteractionDebugLines] = useState<string[]>(
+    [],
+  );
   const [interactionMode, setInteractionMode] =
     useState<GameOfLifeInteractionMode>(initialInteractionMode);
   const [isRunning, setIsRunning] = useState(false);
@@ -182,8 +185,64 @@ export function GameOfLifeSession({
     }
   }, []);
 
-  const resetCanvasInteractions = useCallback(() => {
+  const recordInteractionDebug = useCallback(
+    (label: string) => {
+      if (!debug || typeof performance === "undefined") {
+        return;
+      }
+
+      const nextLine = `${performance.now().toFixed(0)} ${label}`;
+
+      setInteractionDebugLines((current) => {
+        const nextLines = [nextLine, ...current];
+
+        return nextLines.slice(0, 8);
+      });
+    },
+    [debug],
+  );
+
+  const releaseCanvasPointerCapture = useCallback((pointerId: number) => {
     const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    try {
+      if (canvas.hasPointerCapture(pointerId)) {
+        canvas.releasePointerCapture(pointerId);
+      }
+    } catch {}
+  }, []);
+
+  const finishPointerInteraction = useCallback(
+    (pointerId: number, options?: { releaseCapture?: boolean }) => {
+      const completedEditStroke =
+        editStrokeRef.current?.pointerId === pointerId
+          ? editStrokeRef.current
+          : null;
+
+      if (completedEditStroke) {
+        editStrokeRef.current = null;
+
+        if (completedEditStroke.shouldRestoreAutoZoom) {
+          pendingAutoZoomRestoreRef.current = true;
+        }
+      }
+
+      activePointersRef.current.delete(pointerId);
+
+      if (options?.releaseCapture ?? true) {
+        releaseCanvasPointerCapture(pointerId);
+      }
+
+      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
+    },
+    [releaseCanvasPointerCapture],
+  );
+
+  const resetCanvasInteractions = useCallback(() => {
     const activePointerIds = new Set(activePointersRef.current.keys());
     const editStrokePointerId = editStrokeRef.current?.pointerId;
 
@@ -191,20 +250,14 @@ export function GameOfLifeSession({
       activePointerIds.add(editStrokePointerId);
     }
 
-    if (canvas) {
-      for (const pointerId of activePointerIds) {
-        try {
-          if (canvas.hasPointerCapture(pointerId)) {
-            canvas.releasePointerCapture(pointerId);
-          }
-        } catch {}
-      }
+    for (const pointerId of activePointerIds) {
+      releaseCanvasPointerCapture(pointerId);
     }
 
     activePointersRef.current.clear();
     pinchGestureRef.current = null;
     editStrokeRef.current = null;
-  }, []);
+  }, [releaseCanvasPointerCapture]);
 
   const redrawUniverse = useCallback(
     (options?: RedrawOptions) => {
@@ -770,7 +823,9 @@ export function GameOfLifeSession({
           shouldRestoreAutoZoom,
           toggledCellKeys,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
+        recordInteractionDebug(
+          `canvas down ${event.pointerType} p${event.pointerId} pop=${universeRef.current.size}`,
+        );
         return;
       }
 
@@ -781,7 +836,12 @@ export function GameOfLifeSession({
       event.currentTarget.setPointerCapture(event.pointerId);
       pinchGestureRef.current = getPinchGesture(activePointersRef.current);
     },
-    [interactionMode, isRunning, toggleCellsAlongWorldSegment],
+    [
+      interactionMode,
+      isRunning,
+      recordInteractionDebug,
+      toggleCellsAlongWorldSegment,
+    ],
   );
 
   const handleCanvasPointerMove = useCallback(
@@ -823,6 +883,11 @@ export function GameOfLifeSession({
         );
         editStroke.lastWorldX = worldX;
         editStroke.lastWorldY = worldY;
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          recordInteractionDebug(
+            `canvas move ${event.pointerType} p${event.pointerId}`,
+          );
+        }
         return;
       }
 
@@ -884,6 +949,7 @@ export function GameOfLifeSession({
       interactionMode,
       isRunning,
       panViewportByPixels,
+      recordInteractionDebug,
       toggleCellsAlongWorldSegment,
       zoomViewportAtClientPoint,
     ],
@@ -901,43 +967,22 @@ export function GameOfLifeSession({
           event.preventDefault();
         }
 
-        editStrokeRef.current = null;
+        recordInteractionDebug(
+          `canvas up ${event.pointerType} p${event.pointerId} pop=${universeRef.current.size}`,
+        );
       }
 
-      activePointersRef.current.delete(event.pointerId);
-
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-
-      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
-
-      if (completedEditStroke?.shouldRestoreAutoZoom) {
-        pendingAutoZoomRestoreRef.current = true;
-      }
+      finishPointerInteraction(event.pointerId);
     },
-    [],
+    [finishPointerInteraction, recordInteractionDebug],
   );
 
   const handleCanvasLostPointerCapture = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      const completedEditStroke =
-        editStrokeRef.current?.pointerId === event.pointerId
-          ? editStrokeRef.current
-          : null;
-
-      if (completedEditStroke) {
-        editStrokeRef.current = null;
-
-        if (completedEditStroke.shouldRestoreAutoZoom) {
-          pendingAutoZoomRestoreRef.current = true;
-        }
-      }
-
-      activePointersRef.current.delete(event.pointerId);
-      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
+      recordInteractionDebug(`canvas lost p${event.pointerId}`);
+      finishPointerInteraction(event.pointerId, { releaseCapture: false });
     },
-    [],
+    [finishPointerInteraction, recordInteractionDebug],
   );
 
   const handleInteractionModeChange = useCallback(
@@ -1090,6 +1135,134 @@ export function GameOfLifeSession({
   }, [redrawUniverse]);
 
   useEffect(() => {
+    const hasActiveCanvasInteraction = () =>
+      editStrokeRef.current !== null || activePointersRef.current.size > 0;
+
+    const finishActivePointers = () => {
+      if (!hasActiveCanvasInteraction()) {
+        return;
+      }
+
+      const activePointerIds = new Set(activePointersRef.current.keys());
+      const editStrokePointerId = editStrokeRef.current?.pointerId;
+
+      if (editStrokePointerId !== undefined) {
+        activePointerIds.add(editStrokePointerId);
+      }
+
+      for (const pointerId of activePointerIds) {
+        finishPointerInteraction(pointerId);
+      }
+    };
+
+    const handleWindowPointerEnd = (event: PointerEvent) => {
+      if (
+        editStrokeRef.current?.pointerId !== event.pointerId &&
+        !activePointersRef.current.has(event.pointerId)
+      ) {
+        return;
+      }
+
+      recordInteractionDebug(
+        `window ${event.type} ${event.pointerType} p${event.pointerId}`,
+      );
+      finishPointerInteraction(event.pointerId);
+    };
+
+    const handleWindowTouchEnd = () => {
+      recordInteractionDebug("window touchend");
+      finishActivePointers();
+    };
+
+    const handleWindowBlur = () => {
+      if (!hasActiveCanvasInteraction()) {
+        return;
+      }
+
+      resetCanvasInteractions();
+    };
+
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" ||
+        !hasActiveCanvasInteraction()
+      ) {
+        return;
+      }
+
+      resetCanvasInteractions();
+    };
+
+    window.addEventListener("pointerup", handleWindowPointerEnd, true);
+    window.addEventListener("pointercancel", handleWindowPointerEnd, true);
+    window.addEventListener("touchend", handleWindowTouchEnd, true);
+    window.addEventListener("touchcancel", handleWindowTouchEnd, true);
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pointerup", handleWindowPointerEnd, true);
+      window.removeEventListener("pointercancel", handleWindowPointerEnd, true);
+      window.removeEventListener("touchend", handleWindowTouchEnd, true);
+      window.removeEventListener("touchcancel", handleWindowTouchEnd, true);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    finishPointerInteraction,
+    recordInteractionDebug,
+    resetCanvasInteractions,
+  ]);
+
+  useEffect(() => {
+    if (!debug) {
+      return;
+    }
+
+    const recordButtonEvent = (event: Event) => {
+      const target = event.target;
+
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const button = target.closest("button");
+
+      if (!(button instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      const label = button.textContent?.trim() ?? "";
+
+      if (!/^(Start|Resume|Pause)$/.test(label)) {
+        return;
+      }
+
+      const pointerType =
+        event instanceof PointerEvent ? event.pointerType : "touch";
+      const disabledState = button.disabled ? "disabled" : "enabled";
+
+      recordInteractionDebug(
+        `start ${event.type} ${pointerType} ${disabledState} pop=${universeRef.current.size}`,
+      );
+    };
+
+    document.addEventListener("pointerdown", recordButtonEvent, true);
+    document.addEventListener("pointerup", recordButtonEvent, true);
+    document.addEventListener("click", recordButtonEvent, true);
+    document.addEventListener("touchstart", recordButtonEvent, true);
+    document.addEventListener("touchend", recordButtonEvent, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", recordButtonEvent, true);
+      document.removeEventListener("pointerup", recordButtonEvent, true);
+      document.removeEventListener("click", recordButtonEvent, true);
+      document.removeEventListener("touchstart", recordButtonEvent, true);
+      document.removeEventListener("touchend", recordButtonEvent, true);
+    };
+  }, [debug, recordInteractionDebug]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
 
     if (!canvas || typeof ResizeObserver === "undefined") {
@@ -1235,6 +1408,7 @@ export function GameOfLifeSession({
                 debugSnapshot={currentDebugSnapshot}
                 generation={generation}
                 interactionMode={interactionMode}
+                interactionDebugLines={interactionDebugLines}
                 isAutoZoomEnabled={isAutoZoomEnabled}
                 isRunning={isRunning}
                 onClear={handleClear}

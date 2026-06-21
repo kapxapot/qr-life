@@ -45,6 +45,8 @@ beforeAll(() => {
 });
 
 function configureCanvas(canvas: HTMLCanvasElement) {
+  const capturedPointerIds = new Set<number>();
+
   Object.defineProperty(canvas, "clientHeight", {
     configurable: true,
     value: 170,
@@ -68,9 +70,15 @@ function configureCanvas(canvas: HTMLCanvasElement) {
     }),
   });
 
-  canvas.hasPointerCapture = vi.fn(() => true);
-  canvas.releasePointerCapture = vi.fn();
-  canvas.setPointerCapture = vi.fn();
+  canvas.hasPointerCapture = vi.fn((pointerId: number) =>
+    capturedPointerIds.has(pointerId),
+  );
+  canvas.releasePointerCapture = vi.fn((pointerId: number) => {
+    capturedPointerIds.delete(pointerId);
+  });
+  canvas.setPointerCapture = vi.fn((pointerId: number) => {
+    capturedPointerIds.add(pointerId);
+  });
 }
 
 describe("GameOfLifeSession", () => {
@@ -123,5 +131,63 @@ describe("GameOfLifeSession", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
     });
+  });
+
+  it("does not capture edit strokes while drawing", () => {
+    const { container } = render(
+      <GameOfLifeSession
+        mode="playground"
+        onReset={() => {}}
+        onScanAnother={() => {}}
+        qrValue={null}
+        seed={[]}
+      />,
+    );
+    const canvas = container.querySelector("canvas");
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Canvas was not rendered.");
+    }
+
+    configureCanvas(canvas);
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+
+    expect(canvas.setPointerCapture).not.toHaveBeenCalled();
+  });
+
+  it("still captures touch gestures while panning", () => {
+    const { container } = render(
+      <GameOfLifeSession
+        mode="qr"
+        onReset={() => {}}
+        onScanAnother={() => {}}
+        qrValue="hello"
+        seed={[[0, 0]]}
+      />,
+    );
+    const canvas = container.querySelector("canvas");
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Canvas was not rendered.");
+    }
+
+    configureCanvas(canvas);
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+
+    expect(canvas.setPointerCapture).toHaveBeenCalledWith(1);
   });
 });
