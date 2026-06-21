@@ -1,11 +1,12 @@
 import {
+  cleanup,
   createEvent,
   fireEvent,
   render,
   screen,
   waitFor,
 } from "@testing-library/react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { GameOfLifeSession } from "../components/game-of-life/game-of-life-session";
 
 const canvasContextStub = {
@@ -42,6 +43,10 @@ beforeAll(() => {
     configurable: true,
     value: vi.fn(() => canvasContextStub),
   });
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 function configureCanvas(canvas: HTMLCanvasElement) {
@@ -126,6 +131,117 @@ describe("GameOfLifeSession", () => {
       expect(startButton.getAttribute("disabled")).toBeNull();
     });
 
+    fireEvent.click(startButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    });
+  });
+
+  it("starts from touch pointerup even when the follow-up click is missing", async () => {
+    const { container } = render(
+      <GameOfLifeSession
+        mode="playground"
+        onReset={() => {}}
+        onScanAnother={() => {}}
+        qrValue={null}
+        seed={[]}
+      />,
+    );
+    const canvas = container.querySelector("canvas");
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Canvas was not rendered.");
+    }
+
+    configureCanvas(canvas);
+
+    const startButton = screen.getByRole("button", { name: "Start" });
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+    fireEvent.pointerUp(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+
+    await waitFor(() => {
+      expect(startButton.getAttribute("disabled")).toBeNull();
+    });
+
+    fireEvent.pointerDown(startButton, {
+      button: 0,
+      pointerId: 2,
+      pointerType: "touch",
+    });
+    fireEvent.pointerUp(startButton, {
+      button: 0,
+      pointerId: 2,
+      pointerType: "touch",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    });
+  });
+
+  it("ignores the synthetic click that can follow a touch pointerup", async () => {
+    const { container } = render(
+      <GameOfLifeSession
+        mode="playground"
+        onReset={() => {}}
+        onScanAnother={() => {}}
+        qrValue={null}
+        seed={[]}
+      />,
+    );
+    const canvas = container.querySelector("canvas");
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Canvas was not rendered.");
+    }
+
+    configureCanvas(canvas);
+
+    const startButton = screen.getByRole("button", { name: "Start" });
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+    fireEvent.pointerUp(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+
+    await waitFor(() => {
+      expect(startButton.getAttribute("disabled")).toBeNull();
+    });
+
+    fireEvent.pointerDown(startButton, {
+      button: 0,
+      pointerId: 2,
+      pointerType: "touch",
+    });
+    fireEvent.pointerUp(startButton, {
+      button: 0,
+      pointerId: 2,
+      pointerType: "touch",
+    });
     fireEvent.click(startButton);
 
     await waitFor(() => {
