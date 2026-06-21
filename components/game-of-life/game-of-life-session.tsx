@@ -183,6 +183,24 @@ export function GameOfLifeSession({
   }, []);
 
   const resetCanvasInteractions = useCallback(() => {
+    const canvas = canvasRef.current;
+    const activePointerIds = new Set(activePointersRef.current.keys());
+    const editStrokePointerId = editStrokeRef.current?.pointerId;
+
+    if (editStrokePointerId !== undefined) {
+      activePointerIds.add(editStrokePointerId);
+    }
+
+    if (canvas) {
+      for (const pointerId of activePointerIds) {
+        try {
+          if (canvas.hasPointerCapture(pointerId)) {
+            canvas.releasePointerCapture(pointerId);
+          }
+        } catch {}
+      }
+    }
+
     activePointersRef.current.clear();
     pinchGestureRef.current = null;
     editStrokeRef.current = null;
@@ -780,6 +798,10 @@ export function GameOfLifeSession({
           return;
         }
 
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          event.preventDefault();
+        }
+
         const canvasMetrics = getCanvasViewportMetrics(
           canvas,
           largestViewportBaseSpanRef.current,
@@ -875,6 +897,10 @@ export function GameOfLifeSession({
           : null;
 
       if (completedEditStroke) {
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          event.preventDefault();
+        }
+
         editStrokeRef.current = null;
       }
 
@@ -889,6 +915,27 @@ export function GameOfLifeSession({
       if (completedEditStroke?.shouldRestoreAutoZoom) {
         pendingAutoZoomRestoreRef.current = true;
       }
+    },
+    [],
+  );
+
+  const handleCanvasLostPointerCapture = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const completedEditStroke =
+        editStrokeRef.current?.pointerId === event.pointerId
+          ? editStrokeRef.current
+          : null;
+
+      if (completedEditStroke) {
+        editStrokeRef.current = null;
+
+        if (completedEditStroke.shouldRestoreAutoZoom) {
+          pendingAutoZoomRestoreRef.current = true;
+        }
+      }
+
+      activePointersRef.current.delete(event.pointerId);
+      pinchGestureRef.current = getPinchGesture(activePointersRef.current);
     },
     [],
   );
@@ -1177,6 +1224,7 @@ export function GameOfLifeSession({
                 ref={canvasRef}
                 onPointerCancel={handleCanvasPointerUp}
                 onPointerDown={handleCanvasPointerDown}
+                onLostPointerCapture={handleCanvasLostPointerCapture}
                 onPointerMove={handleCanvasPointerMove}
                 onPointerUp={handleCanvasPointerUp}
                 onWheel={handleCanvasWheel}
