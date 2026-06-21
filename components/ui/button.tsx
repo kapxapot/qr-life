@@ -80,7 +80,7 @@ function Button({
     (event: ReactPointerEvent<HTMLButtonElement>) => {
       onPointerDown?.(event);
 
-      if (event.defaultPrevented || disabled) {
+      if (event.defaultPrevented || disabled || !onClick) {
         return;
       }
 
@@ -90,7 +90,7 @@ function Button({
         event.preventDefault();
       }
     },
-    [disabled, onPointerDown],
+    [disabled, onClick, onPointerDown],
   );
 
   const handlePointerUp = useCallback(
@@ -100,6 +100,7 @@ function Button({
       if (
         event.defaultPrevented ||
         disabled ||
+        !onClick ||
         (event.pointerType !== "touch" && event.pointerType !== "pen")
       ) {
         return;

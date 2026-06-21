@@ -131,52 +131,6 @@ describe("GameOfLifeSession", () => {
       expect(startButton.getAttribute("disabled")).toBeNull();
     });
 
-    fireEvent.click(startButton);
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
-    });
-  });
-
-  it("starts from touch pointerup even when the follow-up click is missing", async () => {
-    const { container } = render(
-      <GameOfLifeSession
-        mode="playground"
-        onReset={() => {}}
-        onScanAnother={() => {}}
-        qrValue={null}
-        seed={[]}
-      />,
-    );
-    const canvas = container.querySelector("canvas");
-
-    if (!(canvas instanceof HTMLCanvasElement)) {
-      throw new Error("Canvas was not rendered.");
-    }
-
-    configureCanvas(canvas);
-
-    const startButton = screen.getByRole("button", { name: "Start" });
-
-    fireEvent.pointerDown(canvas, {
-      button: 0,
-      clientX: 85,
-      clientY: 85,
-      pointerId: 1,
-      pointerType: "touch",
-    });
-    fireEvent.pointerUp(canvas, {
-      button: 0,
-      clientX: 85,
-      clientY: 85,
-      pointerId: 1,
-      pointerType: "touch",
-    });
-
-    await waitFor(() => {
-      expect(startButton.getAttribute("disabled")).toBeNull();
-    });
-
     fireEvent.pointerDown(startButton, {
       button: 0,
       pointerId: 2,
@@ -249,7 +203,7 @@ describe("GameOfLifeSession", () => {
     });
   });
 
-  it("does not capture edit strokes while drawing", () => {
+  it("does not capture edit strokes while still capturing panning gestures", () => {
     const { container } = render(
       <GameOfLifeSession
         mode="playground"
@@ -276,10 +230,9 @@ describe("GameOfLifeSession", () => {
     });
 
     expect(canvas.setPointerCapture).not.toHaveBeenCalled();
-  });
+    cleanup();
 
-  it("still captures touch gestures while panning", () => {
-    const { container } = render(
+    const { container: qrContainer } = render(
       <GameOfLifeSession
         mode="qr"
         onReset={() => {}}
@@ -288,15 +241,15 @@ describe("GameOfLifeSession", () => {
         seed={[[0, 0]]}
       />,
     );
-    const canvas = container.querySelector("canvas");
+    const qrCanvas = qrContainer.querySelector("canvas");
 
-    if (!(canvas instanceof HTMLCanvasElement)) {
+    if (!(qrCanvas instanceof HTMLCanvasElement)) {
       throw new Error("Canvas was not rendered.");
     }
 
-    configureCanvas(canvas);
+    configureCanvas(qrCanvas);
 
-    fireEvent.pointerDown(canvas, {
+    fireEvent.pointerDown(qrCanvas, {
       button: 0,
       clientX: 85,
       clientY: 85,
@@ -304,6 +257,6 @@ describe("GameOfLifeSession", () => {
       pointerType: "touch",
     });
 
-    expect(canvas.setPointerCapture).toHaveBeenCalledWith(1);
+    expect(qrCanvas.setPointerCapture).toHaveBeenCalledWith(1);
   });
 });

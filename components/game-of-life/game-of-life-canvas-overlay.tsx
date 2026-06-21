@@ -12,7 +12,6 @@ type Props = {
   debugSnapshot: LifeDebugSnapshot | null;
   generation: number;
   interactionMode: GameOfLifeInteractionMode;
-  interactionDebugLines: string[];
   isAutoZoomEnabled: boolean;
   isRunning: boolean;
   onClear: () => void;
@@ -32,7 +31,6 @@ export function GameOfLifeCanvasOverlay({
   debugSnapshot,
   generation,
   interactionMode,
-  interactionDebugLines,
   isAutoZoomEnabled,
   isRunning,
   onClear,
@@ -52,10 +50,7 @@ export function GameOfLifeCanvasOverlay({
       <div className="pointer-events-none absolute inset-x-2 top-2 flex items-start justify-between gap-2 sm:inset-x-4 sm:top-4 lg:justify-end">
         {debugSnapshot && (
           <div className="pointer-events-auto">
-            <GameOfLifeDebugPanel
-              debugSnapshot={debugSnapshot}
-              interactionDebugLines={interactionDebugLines}
-            />
+            <GameOfLifeDebugPanel debugSnapshot={debugSnapshot} />
           </div>
         )}
 
