@@ -17,6 +17,7 @@ import {
   getViewportSpans,
   normalizeViewportSpanForAxis,
 } from "@/lib/game-of-life/game-of-life-viewport";
+import { DEBUG_AUTOFIT_BOUNDS_COLOR, DEBUG_AUTOFIT_EDGE_COLOR, DEBUG_UNIVERSE_BOUNDS_COLOR, GLIDER_CELL_COLOR, LIVE_CELL_COLOR, LWSS_CELL_COLOR, MWSS_CELL_COLOR } from "./colors";
 
 const CANVAS_CELL_SIZE = 14;
 const GRIDLINE_CELL_INSET = 1;
@@ -24,13 +25,6 @@ const LIVE_CELL_INSET = 1.75;
 const GRID_INSET_START_RATIO = 0.8;
 const GRID_INSET_END_RATIO = 1.6;
 const MIN_VISIBLE_LIVE_CELL_GAP_DEVICE_PIXELS = 2;
-const LIVE_CELL_COLOR = "#67e8f9";
-const GLIDER_CELL_COLOR = "#ffcc4a";
-const LWSS_CELL_COLOR = "#46ea82";
-const MWSS_CELL_COLOR = "#fe3856";
-const DEBUG_AUTOFIT_BOUNDS_COLOR = "#f43f5e";
-const DEBUG_UNIVERSE_BOUNDS_COLOR = "#22c55e";
-const DEBUG_AUTOFIT_EDGE_COLOR = "#f8fafc";
 
 export const MIN_VIEWPORT_SPAN = 41;
 export const PLAYGROUND_INITIAL_VIEWPORT_BASE_SPAN = 17;
