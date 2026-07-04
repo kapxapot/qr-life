@@ -102,7 +102,7 @@ export function QrScanner({
       return;
     }
 
-    const maxScanSide = 720;
+    const maxScanSide = 1080;
     const longestSide = Math.max(video.videoWidth, video.videoHeight);
     const scale = longestSide > maxScanSide ? maxScanSide / longestSide : 1;
     const width = Math.max(1, Math.round(video.videoWidth * scale));
