@@ -37,6 +37,35 @@ const BASE_LWSS: readonly Point[] = [
   { x: 3, y: 3 },
 ];
 
+const CLEAN_LWSS_LEAD_INS = [
+  {
+    name: "phase 0 without the optional trailing cell",
+    points: [
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: 2 },
+      { x: 4, y: 2 },
+      { x: 0, y: 3 },
+      { x: 1, y: 3 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+    ],
+  },
+  {
+    name: "phase 2 without the optional trailing cell",
+    points: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 0, y: 1 },
+      { x: 4, y: 1 },
+      { x: 0, y: 2 },
+      { x: 1, y: 3 },
+    ],
+  },
+] as const satisfies readonly { name: string; points: readonly Point[] }[];
+
 const BASE_MWSS: readonly Point[] = [
   { x: 3, y: 0 },
   { x: 1, y: 1 },
@@ -51,6 +80,133 @@ const BASE_MWSS: readonly Point[] = [
   { x: 4, y: 4 },
 ];
 
+const CLEAN_MWSS_LEAD_INS = [
+  {
+    name: "phase 0 easy-draw minimal lead-in",
+    points: [
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: 2 },
+      { x: 5, y: 2 },
+      { x: 0, y: 3 },
+      { x: 1, y: 3 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+      { x: 4, y: 3 },
+    ],
+  },
+  {
+    name: "phase 0 without the top cap cell",
+    points: [
+      { x: 1, y: 0 },
+      { x: 5, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: 2 },
+      { x: 5, y: 2 },
+      { x: 0, y: 3 },
+      { x: 1, y: 3 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+      { x: 4, y: 3 },
+    ],
+  },
+  {
+    name: "phase 0 without the upper-right cell",
+    points: [
+      { x: 3, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 2 },
+      { x: 0, y: 3 },
+      { x: 5, y: 3 },
+      { x: 0, y: 4 },
+      { x: 1, y: 4 },
+      { x: 2, y: 4 },
+      { x: 3, y: 4 },
+      { x: 4, y: 4 },
+    ],
+  },
+  {
+    name: "phase 2 without the lower-right tail cell",
+    points: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+      { x: 0, y: 1 },
+      { x: 5, y: 1 },
+      { x: 0, y: 2 },
+      { x: 1, y: 3 },
+      { x: 3, y: 4 },
+    ],
+  },
+  {
+    name: "phase 2 without the far-right tail cell",
+    points: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+      { x: 0, y: 1 },
+      { x: 5, y: 1 },
+      { x: 0, y: 2 },
+      { x: 1, y: 3 },
+      { x: 5, y: 3 },
+    ],
+  },
+] as const satisfies readonly { name: string; points: readonly Point[] }[];
+
+const BASE_HWSS: readonly Point[] = [
+  { x: 3, y: 0 },
+  { x: 4, y: 0 },
+  { x: 1, y: 1 },
+  { x: 6, y: 1 },
+  { x: 0, y: 2 },
+  { x: 0, y: 3 },
+  { x: 6, y: 3 },
+  { x: 0, y: 4 },
+  { x: 1, y: 4 },
+  { x: 2, y: 4 },
+  { x: 3, y: 4 },
+  { x: 4, y: 4 },
+  { x: 5, y: 4 },
+];
+
+const BASIC_HWSS_LEAD_INS = [
+  {
+    name: "easy-draw minimal HWSS seed",
+    points: [
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: 2 },
+      { x: 6, y: 2 },
+      { x: 0, y: 3 },
+      { x: 1, y: 3 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+      { x: 4, y: 3 },
+      { x: 5, y: 3 },
+    ],
+  },
+  {
+    name: "standard hand-drawn HWSS seed",
+    points: [
+      { x: 1, y: 0 },
+      { x: 6, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: 2 },
+      { x: 6, y: 2 },
+      { x: 0, y: 3 },
+      { x: 1, y: 3 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+      { x: 4, y: 3 },
+      { x: 5, y: 3 },
+    ],
+  },
+] as const satisfies readonly { name: string; points: readonly Point[] }[];
+
 const GLIDER_BOUNDS: PatternBounds = {
   height: 3,
   width: 3,
@@ -64,6 +220,11 @@ const LWSS_BOUNDS: PatternBounds = {
 const MWSS_BOUNDS: PatternBounds = {
   height: 5,
   width: 6,
+};
+
+const HWSS_BOUNDS: PatternBounds = {
+  height: 5,
+  width: 7,
 };
 
 const TRANSFORMS = {
@@ -195,6 +356,27 @@ describe("getFreeFlyingPatternCells", () => {
     });
   });
 
+  describe.each(Object.entries(TRANSFORMS))("%s", (_name, transform) => {
+    it.each(CLEAN_LWSS_LEAD_INS)(
+      "detects clean LWSS lead-ins without the optional extra cell",
+      ({ points }) => {
+        const universe = createUniverse(
+          transformPoints(points, LWSS_BOUNDS, transform, 30, 30),
+        );
+        const patternCells = getFreeFlyingPatternCells(universe);
+
+        expect(patternCells.gliderCells.size).toBe(0);
+        expect(patternCells.lwssCells.size).toBe(universe.size);
+        expect(sortCellKeys(patternCells.lwssCells)).toEqual(
+          sortCellKeys(universe),
+        );
+        expect(sortCellKeys(patternCells.excludedCells)).toEqual(
+          sortCellKeys(universe),
+        );
+      },
+    );
+  });
+
   it("does not detect a LWSS that touches another live cell", () => {
     const universe = createUniverse([
       ...transformPoints(BASE_LWSS, LWSS_BOUNDS, TRANSFORMS.identity, 12, 12),
@@ -224,6 +406,28 @@ describe("getFreeFlyingPatternCells", () => {
     });
   });
 
+  describe.each(Object.entries(TRANSFORMS))("%s", (_name, transform) => {
+    it.each(CLEAN_MWSS_LEAD_INS)(
+      "detects clean MWSS lead-ins without the optional extra cell",
+      ({ points }) => {
+        const universe = createUniverse(
+          transformPoints(points, MWSS_BOUNDS, transform, 42, 42),
+        );
+        const patternCells = getFreeFlyingPatternCells(universe);
+
+        expect(patternCells.gliderCells.size).toBe(0);
+        expect(patternCells.lwssCells.size).toBe(0);
+        expect(patternCells.mwssCells.size).toBe(universe.size);
+        expect(sortCellKeys(patternCells.mwssCells)).toEqual(
+          sortCellKeys(universe),
+        );
+        expect(sortCellKeys(patternCells.excludedCells)).toEqual(
+          sortCellKeys(universe),
+        );
+      },
+    );
+  });
+
   it("does not detect a MWSS that touches another live cell", () => {
     const universe = createUniverse([
       ...transformPoints(BASE_MWSS, MWSS_BOUNDS, TRANSFORMS.identity, 12, 12),
@@ -232,10 +436,63 @@ describe("getFreeFlyingPatternCells", () => {
 
     expect(getFreeFlyingPatternCells(universe).mwssCells.size).toBe(0);
   });
+
+  describe.each(Object.entries(TRANSFORMS))("%s", (_name, transform) => {
+    it.each([0, 1, 2, 3])("detects isolated HWSS in phase %i", (phase) => {
+      const startingUniverse = createUniverse(
+        transformPoints(BASE_HWSS, HWSS_BOUNDS, transform, 54, 54),
+      );
+      const universe = advanceGenerations(startingUniverse, phase);
+      const patternCells = getFreeFlyingPatternCells(universe);
+
+      expect(patternCells.gliderCells.size).toBe(0);
+      expect(patternCells.lwssCells.size).toBe(0);
+      expect(patternCells.mwssCells.size).toBe(0);
+      expect(patternCells.hwssCells.size).toBe(universe.size);
+      expect(sortCellKeys(patternCells.hwssCells)).toEqual(
+        sortCellKeys(universe),
+      );
+      expect(sortCellKeys(patternCells.excludedCells)).toEqual(
+        sortCellKeys(universe),
+      );
+    });
+  });
+
+  describe.each(Object.entries(TRANSFORMS))("%s", (_name, transform) => {
+    it.each(BASIC_HWSS_LEAD_INS)(
+      "detects the hand-drawn HWSS seed before it reaches the full phase",
+      ({ points }) => {
+        const universe = createUniverse(
+          transformPoints(points, HWSS_BOUNDS, transform, 54, 54),
+        );
+        const patternCells = getFreeFlyingPatternCells(universe);
+
+        expect(patternCells.gliderCells.size).toBe(0);
+        expect(patternCells.lwssCells.size).toBe(0);
+        expect(patternCells.mwssCells.size).toBe(0);
+        expect(patternCells.hwssCells.size).toBe(universe.size);
+        expect(sortCellKeys(patternCells.hwssCells)).toEqual(
+          sortCellKeys(universe),
+        );
+        expect(sortCellKeys(patternCells.excludedCells)).toEqual(
+          sortCellKeys(universe),
+        );
+      },
+    );
+  });
+
+  it("does not detect a HWSS that touches another live cell", () => {
+    const universe = createUniverse([
+      ...transformPoints(BASE_HWSS, HWSS_BOUNDS, TRANSFORMS.identity, 12, 12),
+      { x: 12, y: 11 },
+    ]);
+
+    expect(getFreeFlyingPatternCells(universe).hwssCells.size).toBe(0);
+  });
 });
 
 describe("getAutofitUniverse", () => {
-  it("removes glider, LWSS, and MWSS cells from the autofit universe without mutating inputs", () => {
+  it("removes glider, LWSS, MWSS, and HWSS cells from the autofit universe without mutating inputs", () => {
     const glider = createUniverse(
       transformPoints(BASE_GLIDER, GLIDER_BOUNDS, TRANSFORMS.identity, 5, 5),
     );
@@ -245,7 +502,17 @@ describe("getAutofitUniverse", () => {
     const mwss = createUniverse(
       transformPoints(BASE_MWSS, MWSS_BOUNDS, TRANSFORMS.identity, 34, 10),
     );
-    const universe = new Set([...glider, ...lwss, ...mwss, "0:0", "1:0"]);
+    const hwss = createUniverse(
+      transformPoints(BASE_HWSS, HWSS_BOUNDS, TRANSFORMS.rotate90, 46, 16),
+    );
+    const universe = new Set([
+      ...glider,
+      ...lwss,
+      ...mwss,
+      ...hwss,
+      "0:0",
+      "1:0",
+    ]);
     const patternCells = getFreeFlyingPatternCells(universe);
     const autofitUniverse = getAutofitUniverse(
       universe,
@@ -256,9 +523,11 @@ describe("getAutofitUniverse", () => {
     expect(patternCells.gliderCells.size).toBe(5);
     expect(patternCells.lwssCells.size).toBe(9);
     expect(patternCells.mwssCells.size).toBe(11);
-    expect(universe.size).toBe(27);
+    expect(patternCells.hwssCells.size).toBe(13);
+    expect(universe.size).toBe(40);
     expect(glider.size).toBe(5);
     expect(lwss.size).toBe(9);
     expect(mwss.size).toBe(11);
+    expect(hwss.size).toBe(13);
   });
 });

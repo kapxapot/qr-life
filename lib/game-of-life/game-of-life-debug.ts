@@ -12,6 +12,7 @@ export type LifeDebugSnapshot = {
   autofitLiveCount: number;
   autofitTargetSpan: number | null;
   gliderCount: number;
+  hwssCount: number;
   lwssCount: number;
   mwssCount: number;
   universeBounds: UniverseBounds | null;
@@ -80,6 +81,7 @@ export function createLifeDebugSnapshot({
     autofitLiveCount: autofitUniverse.size,
     autofitTargetSpan,
     gliderCount: patternCells.gliderCells.size,
+    hwssCount: patternCells.hwssCells.size,
     lwssCount: patternCells.lwssCells.size,
     mwssCount: patternCells.mwssCells.size,
     universeBounds: getUniverseBounds(universe),

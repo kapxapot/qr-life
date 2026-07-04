@@ -17,7 +17,16 @@ import {
   getViewportSpans,
   normalizeViewportSpanForAxis,
 } from "@/lib/game-of-life/game-of-life-viewport";
-import { DEBUG_AUTOFIT_BOUNDS_COLOR, DEBUG_AUTOFIT_EDGE_COLOR, DEBUG_UNIVERSE_BOUNDS_COLOR, GLIDER_CELL_COLOR, LIVE_CELL_COLOR, LWSS_CELL_COLOR, MWSS_CELL_COLOR } from "./colors";
+import {
+  DEBUG_AUTOFIT_BOUNDS_COLOR,
+  DEBUG_AUTOFIT_EDGE_COLOR,
+  DEBUG_UNIVERSE_BOUNDS_COLOR,
+  GLIDER_CELL_COLOR,
+  HWSS_CELL_COLOR,
+  LIVE_CELL_COLOR,
+  LWSS_CELL_COLOR,
+  MWSS_CELL_COLOR,
+} from "./colors";
 
 const CANVAS_CELL_SIZE = 14;
 const GRIDLINE_CELL_INSET = 1;
@@ -155,6 +164,7 @@ export function cloneFreeFlyingPatternCells(
   return {
     excludedCells: cloneUniverse(patternCells.excludedCells),
     gliderCells: cloneUniverse(patternCells.gliderCells),
+    hwssCells: cloneUniverse(patternCells.hwssCells),
     lwssCells: cloneUniverse(patternCells.lwssCells),
     mwssCells: cloneUniverse(patternCells.mwssCells),
   };
@@ -571,6 +581,14 @@ export function drawUniverse(
     context.fillStyle = GLIDER_CELL_COLOR;
 
     for (const cellKey of patternCells.gliderCells) {
+      drawCell(cellKey);
+    }
+  }
+
+  if (patternCells.hwssCells.size > 0) {
+    context.fillStyle = HWSS_CELL_COLOR;
+
+    for (const cellKey of patternCells.hwssCells) {
       drawCell(cellKey);
     }
   }

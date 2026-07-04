@@ -17,65 +17,252 @@ type CellPosition = {
   y: number;
 };
 
-type PatternSpan = {
-  x: number;
-  y: number;
+type PatternBounds = {
+  height: number;
+  width: number;
 };
 
 type FreeFlyingPatternDescriptor = {
+  cycleSignatureKeys: ReadonlySet<string>;
   isExpectedTranslation: (deltaX: number, deltaY: number) => boolean;
+  leadInSignatureKeys: ReadonlySet<string>;
   neighborRadius: number;
-  phasePopulations: readonly number[];
   period: number;
-  spans: readonly PatternSpan[];
 };
 
 export type FreeFlyingPatternCells = {
   excludedCells: LifeUniverse;
   gliderCells: LifeUniverse;
+  hwssCells: LifeUniverse;
   lwssCells: LifeUniverse;
   mwssCells: LifeUniverse;
 };
 
-const GLIDER_PATTERN: FreeFlyingPatternDescriptor = {
-  isExpectedTranslation: (deltaX, deltaY) =>
-    Math.abs(deltaX) === 1 && Math.abs(deltaY) === 1,
-  neighborRadius: 1,
-  phasePopulations: [5],
-  period: 4,
-  spans: [{ x: 3, y: 3 }],
+const GLIDER_BOUNDS: PatternBounds = {
+  height: 3,
+  width: 3,
 };
 
-const LWSS_PATTERN: FreeFlyingPatternDescriptor = {
-  isExpectedTranslation: (deltaX, deltaY) =>
-    (Math.abs(deltaX) === 2 && deltaY === 0) ||
-    (deltaX === 0 && Math.abs(deltaY) === 2),
-  neighborRadius: 2,
-  phasePopulations: [9, 12],
-  period: 4,
-  spans: [
-    { x: 4, y: 5 },
-    { x: 5, y: 4 },
-  ],
+const GLIDER_CELLS = [
+  { x: 1, y: 0 },
+  { x: 2, y: 1 },
+  { x: 0, y: 2 },
+  { x: 1, y: 2 },
+  { x: 2, y: 2 },
+] as const satisfies readonly CellPosition[];
+
+const LWSS_BOUNDS: PatternBounds = {
+  height: 4,
+  width: 5,
 };
 
-const MWSS_PATTERN: FreeFlyingPatternDescriptor = {
-  isExpectedTranslation: (deltaX, deltaY) =>
-    (Math.abs(deltaX) === 2 && deltaY === 0) ||
-    (deltaX === 0 && Math.abs(deltaY) === 2),
-  neighborRadius: 2,
-  phasePopulations: [11, 15],
-  period: 4,
-  spans: [
-    { x: 6, y: 5 },
-    { x: 5, y: 6 },
-    { x: 6, y: 4 },
-    { x: 4, y: 6 },
+const LWSS_CELLS = [
+  { x: 1, y: 0 },
+  { x: 4, y: 0 },
+  { x: 0, y: 1 },
+  { x: 0, y: 2 },
+  { x: 4, y: 2 },
+  { x: 0, y: 3 },
+  { x: 1, y: 3 },
+  { x: 2, y: 3 },
+  { x: 3, y: 3 },
+] as const satisfies readonly CellPosition[];
+
+const CLEAN_LWSS_LEAD_IN_CELLS = [
+  [
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: 2 },
+    { x: 4, y: 2 },
+    { x: 0, y: 3 },
+    { x: 1, y: 3 },
+    { x: 2, y: 3 },
+    { x: 3, y: 3 },
   ],
+  [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 2, y: 0 },
+    { x: 3, y: 0 },
+    { x: 0, y: 1 },
+    { x: 4, y: 1 },
+    { x: 0, y: 2 },
+    { x: 1, y: 3 },
+  ],
+] as const satisfies readonly (readonly CellPosition[])[];
+
+const MWSS_BOUNDS: PatternBounds = {
+  height: 5,
+  width: 6,
 };
+
+const MWSS_CELLS = [
+  { x: 3, y: 0 },
+  { x: 1, y: 1 },
+  { x: 5, y: 1 },
+  { x: 0, y: 2 },
+  { x: 0, y: 3 },
+  { x: 5, y: 3 },
+  { x: 0, y: 4 },
+  { x: 1, y: 4 },
+  { x: 2, y: 4 },
+  { x: 3, y: 4 },
+  { x: 4, y: 4 },
+] as const satisfies readonly CellPosition[];
+
+const CLEAN_MWSS_LEAD_IN_CELLS = [
+  [
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: 2 },
+    { x: 5, y: 2 },
+    { x: 0, y: 3 },
+    { x: 1, y: 3 },
+    { x: 2, y: 3 },
+    { x: 3, y: 3 },
+    { x: 4, y: 3 },
+  ],
+  [
+    { x: 1, y: 0 },
+    { x: 5, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: 2 },
+    { x: 5, y: 2 },
+    { x: 0, y: 3 },
+    { x: 1, y: 3 },
+    { x: 2, y: 3 },
+    { x: 3, y: 3 },
+    { x: 4, y: 3 },
+  ],
+  [
+    { x: 3, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 2 },
+    { x: 0, y: 3 },
+    { x: 5, y: 3 },
+    { x: 0, y: 4 },
+    { x: 1, y: 4 },
+    { x: 2, y: 4 },
+    { x: 3, y: 4 },
+    { x: 4, y: 4 },
+  ],
+  [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 2, y: 0 },
+    { x: 3, y: 0 },
+    { x: 4, y: 0 },
+    { x: 0, y: 1 },
+    { x: 5, y: 1 },
+    { x: 0, y: 2 },
+    { x: 1, y: 3 },
+    { x: 3, y: 4 },
+  ],
+  [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 2, y: 0 },
+    { x: 3, y: 0 },
+    { x: 4, y: 0 },
+    { x: 0, y: 1 },
+    { x: 5, y: 1 },
+    { x: 0, y: 2 },
+    { x: 1, y: 3 },
+    { x: 5, y: 3 },
+  ],
+] as const satisfies readonly (readonly CellPosition[])[];
+
+const HWSS_BOUNDS: PatternBounds = {
+  height: 5,
+  width: 7,
+};
+
+const HWSS_CELLS = [
+  { x: 3, y: 0 },
+  { x: 4, y: 0 },
+  { x: 1, y: 1 },
+  { x: 6, y: 1 },
+  { x: 0, y: 2 },
+  { x: 0, y: 3 },
+  { x: 6, y: 3 },
+  { x: 0, y: 4 },
+  { x: 1, y: 4 },
+  { x: 2, y: 4 },
+  { x: 3, y: 4 },
+  { x: 4, y: 4 },
+  { x: 5, y: 4 },
+] as const satisfies readonly CellPosition[];
+
+const BASIC_HWSS_LEAD_IN_CELLS = [
+  [
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: 2 },
+    { x: 6, y: 2 },
+    { x: 0, y: 3 },
+    { x: 1, y: 3 },
+    { x: 2, y: 3 },
+    { x: 3, y: 3 },
+    { x: 4, y: 3 },
+    { x: 5, y: 3 },
+  ],
+  [
+    { x: 1, y: 0 },
+    { x: 6, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: 2 },
+    { x: 6, y: 2 },
+    { x: 0, y: 3 },
+    { x: 1, y: 3 },
+    { x: 2, y: 3 },
+    { x: 3, y: 3 },
+    { x: 4, y: 3 },
+    { x: 5, y: 3 },
+  ],
+] as const satisfies readonly (readonly CellPosition[])[];
+
+type PatternTransform = (
+  point: CellPosition,
+  bounds: PatternBounds,
+) => CellPosition;
+
+const PATTERN_TRANSFORMS = [
+  ({ x, y }: CellPosition) => ({ x, y }),
+  ({ x, y }: CellPosition, bounds: PatternBounds) => ({
+    x: bounds.height - 1 - y,
+    y: x,
+  }),
+  ({ x, y }: CellPosition, bounds: PatternBounds) => ({
+    x: bounds.width - 1 - x,
+    y: bounds.height - 1 - y,
+  }),
+  ({ x, y }: CellPosition, bounds: PatternBounds) => ({
+    x: y,
+    y: bounds.width - 1 - x,
+  }),
+  ({ x, y }: CellPosition, bounds: PatternBounds) => ({
+    x,
+    y: bounds.height - 1 - y,
+  }),
+  ({ x, y }: CellPosition, bounds: PatternBounds) => ({
+    x: bounds.width - 1 - x,
+    y,
+  }),
+  ({ x, y }: CellPosition) => ({ x: y, y: x }),
+  ({ x, y }: CellPosition, bounds: PatternBounds) => ({
+    x: bounds.height - 1 - y,
+    y: bounds.width - 1 - x,
+  }),
+] as const satisfies readonly PatternTransform[];
 
 function toCellKey(x: number, y: number) {
   return `${x}:${y}`;
+}
+
+function createUniverseFromPoints(
+  points: readonly CellPosition[],
+): LifeUniverse {
+  return new Set(points.map(({ x, y }) => toCellKey(x, y)));
 }
 
 export function getLifeCellKey(x: number, y: number) {
@@ -129,6 +316,7 @@ function createEmptyFreeFlyingPatternCells(): FreeFlyingPatternCells {
   return {
     excludedCells: new Set<string>(),
     gliderCells: new Set<string>(),
+    hwssCells: new Set<string>(),
     lwssCells: new Set<string>(),
     mwssCells: new Set<string>(),
   };
@@ -273,13 +461,132 @@ function normalizeUniverseShape(
   };
 }
 
-function matchesPatternSpan(
-  spans: readonly PatternSpan[],
-  spanX: number,
-  spanY: number,
-) {
-  return spans.some((span) => span.x === spanX && span.y === spanY);
+function getShapeSignatureKey(shape: NormalizedUniverseShape) {
+  return `${shape.maxX - shape.minX + 1}x${shape.maxY - shape.minY + 1}:${shape.signature}`;
 }
+
+function transformPatternPoints(
+  points: readonly CellPosition[],
+  bounds: PatternBounds,
+  transform: PatternTransform,
+) {
+  return points.map((point) => transform(point, bounds));
+}
+
+function collectCycleSignatureKeys(
+  points: readonly CellPosition[],
+  bounds: PatternBounds,
+  period: number,
+) {
+  const signatureKeys = new Set<string>();
+
+  for (const transform of PATTERN_TRANSFORMS) {
+    let phaseUniverse = createUniverseFromPoints(
+      transformPatternPoints(points, bounds, transform),
+    );
+
+    for (let generation = 0; generation < period; generation += 1) {
+      const shape = normalizeUniverseShape(phaseUniverse);
+
+      if (shape) {
+        signatureKeys.add(getShapeSignatureKey(shape));
+      }
+
+      phaseUniverse = nextGeneration(phaseUniverse);
+    }
+  }
+
+  return signatureKeys;
+}
+
+function collectStaticSignatureKeys(
+  states: readonly (readonly CellPosition[])[],
+  bounds: PatternBounds,
+) {
+  const signatureKeys = new Set<string>();
+
+  for (const points of states) {
+    for (const transform of PATTERN_TRANSFORMS) {
+      const shape = normalizeUniverseShape(
+        createUniverseFromPoints(
+          transformPatternPoints(points, bounds, transform),
+        ),
+      );
+
+      if (shape) {
+        signatureKeys.add(getShapeSignatureKey(shape));
+      }
+    }
+  }
+
+  return signatureKeys;
+}
+
+function createFreeFlyingPatternDescriptor({
+  bounds,
+  cycleCells,
+  isExpectedTranslation,
+  leadInCells = [],
+  neighborRadius,
+  period,
+}: {
+  bounds: PatternBounds;
+  cycleCells: readonly CellPosition[];
+  isExpectedTranslation: (deltaX: number, deltaY: number) => boolean;
+  leadInCells?: readonly (readonly CellPosition[])[];
+  neighborRadius: number;
+  period: number;
+}): FreeFlyingPatternDescriptor {
+  return {
+    cycleSignatureKeys: collectCycleSignatureKeys(cycleCells, bounds, period),
+    isExpectedTranslation,
+    leadInSignatureKeys: collectStaticSignatureKeys(leadInCells, bounds),
+    neighborRadius,
+    period,
+  };
+}
+
+const GLIDER_PATTERN = createFreeFlyingPatternDescriptor({
+  bounds: GLIDER_BOUNDS,
+  cycleCells: GLIDER_CELLS,
+  isExpectedTranslation: (deltaX, deltaY) =>
+    Math.abs(deltaX) === 1 && Math.abs(deltaY) === 1,
+  neighborRadius: 1,
+  period: 4,
+});
+
+const LWSS_PATTERN = createFreeFlyingPatternDescriptor({
+  bounds: LWSS_BOUNDS,
+  cycleCells: LWSS_CELLS,
+  isExpectedTranslation: (deltaX, deltaY) =>
+    (Math.abs(deltaX) === 2 && deltaY === 0) ||
+    (deltaX === 0 && Math.abs(deltaY) === 2),
+  leadInCells: CLEAN_LWSS_LEAD_IN_CELLS,
+  neighborRadius: 2,
+  period: 4,
+});
+
+const MWSS_PATTERN = createFreeFlyingPatternDescriptor({
+  bounds: MWSS_BOUNDS,
+  cycleCells: MWSS_CELLS,
+  isExpectedTranslation: (deltaX, deltaY) =>
+    (Math.abs(deltaX) === 2 && deltaY === 0) ||
+    (deltaX === 0 && Math.abs(deltaY) === 2),
+  leadInCells: CLEAN_MWSS_LEAD_IN_CELLS,
+  neighborRadius: 2,
+  period: 4,
+});
+
+const HWSS_PATTERN = createFreeFlyingPatternDescriptor({
+  bounds: HWSS_BOUNDS,
+  cycleCells: HWSS_CELLS,
+  isExpectedTranslation: (deltaX, deltaY) =>
+    (Math.abs(deltaX) === 2 && deltaY === 0) ||
+    (deltaX === 0 && Math.abs(deltaY) === 2),
+  leadInCells: BASIC_HWSS_LEAD_IN_CELLS,
+  neighborRadius: 2,
+  period: 4,
+});
 
 function isSingleConnectedComponent(
   universe: LifeUniverse,
@@ -306,31 +613,51 @@ function isFreeFlyingPatternComponent(
   component: LifeUniverse,
   pattern: FreeFlyingPatternDescriptor,
 ): boolean {
-  if (!pattern.phasePopulations.includes(component.size)) {
-    return false;
-  }
-
   const initialShape = normalizeUniverseShape(component);
 
   if (!initialShape) {
     return false;
   }
 
-  const spanX = initialShape.maxX - initialShape.minX + 1;
-  const spanY = initialShape.maxY - initialShape.minY + 1;
+  const initialSignatureKey = getShapeSignatureKey(initialShape);
+  const isCanonicalStart = pattern.cycleSignatureKeys.has(initialSignatureKey);
+  const isLeadInStart = pattern.leadInSignatureKeys.has(initialSignatureKey);
 
-  if (!matchesPatternSpan(pattern.spans, spanX, spanY)) {
+  if (!isCanonicalStart && !isLeadInStart) {
     return false;
   }
 
-  let nextComponent = cloneUniverse(component);
+  let cycleStartComponent = cloneUniverse(component);
+
+  if (isLeadInStart) {
+    cycleStartComponent = nextGeneration(cycleStartComponent);
+
+    if (
+      !isSingleConnectedComponent(cycleStartComponent, pattern.neighborRadius)
+    ) {
+      return false;
+    }
+
+    const cycleStartShape = normalizeUniverseShape(cycleStartComponent);
+
+    if (
+      !cycleStartShape ||
+      !pattern.cycleSignatureKeys.has(getShapeSignatureKey(cycleStartShape))
+    ) {
+      return false;
+    }
+  }
+
+  const cycleStartShape = normalizeUniverseShape(cycleStartComponent);
+
+  if (!cycleStartShape) {
+    return false;
+  }
+
+  let nextComponent = cloneUniverse(cycleStartComponent);
 
   for (let generation = 0; generation < pattern.period; generation += 1) {
     nextComponent = nextGeneration(nextComponent);
-
-    if (!pattern.phasePopulations.includes(nextComponent.size)) {
-      return false;
-    }
 
     if (!isSingleConnectedComponent(nextComponent, pattern.neighborRadius)) {
       return false;
@@ -338,14 +665,10 @@ function isFreeFlyingPatternComponent(
 
     const nextPhaseShape = normalizeUniverseShape(nextComponent);
 
-    if (!nextPhaseShape) {
-      return false;
-    }
-
-    const nextSpanX = nextPhaseShape.maxX - nextPhaseShape.minX + 1;
-    const nextSpanY = nextPhaseShape.maxY - nextPhaseShape.minY + 1;
-
-    if (!matchesPatternSpan(pattern.spans, nextSpanX, nextSpanY)) {
+    if (
+      !nextPhaseShape ||
+      !pattern.cycleSignatureKeys.has(getShapeSignatureKey(nextPhaseShape))
+    ) {
       return false;
     }
   }
@@ -357,10 +680,10 @@ function isFreeFlyingPatternComponent(
   }
 
   return (
-    initialShape.signature === nextShape.signature &&
+    cycleStartShape.signature === nextShape.signature &&
     pattern.isExpectedTranslation(
-      nextShape.minX - initialShape.minX,
-      nextShape.minY - initialShape.minY,
+      nextShape.minX - cycleStartShape.minX,
+      nextShape.minY - cycleStartShape.minY,
     )
   );
 }
@@ -403,6 +726,10 @@ export function getFreeFlyingPatternCells(
     universe,
     GLIDER_PATTERN,
   );
+  detectedPatterns.hwssCells = getFreeFlyingPatternCellsByComponent(
+    universe,
+    HWSS_PATTERN,
+  );
   detectedPatterns.lwssCells = getFreeFlyingPatternCellsByComponent(
     universe,
     LWSS_PATTERN,
@@ -415,6 +742,7 @@ export function getFreeFlyingPatternCells(
     detectedPatterns.excludedCells,
     detectedPatterns.gliderCells,
   );
+  addUniverseCells(detectedPatterns.excludedCells, detectedPatterns.hwssCells);
   addUniverseCells(detectedPatterns.excludedCells, detectedPatterns.lwssCells);
   addUniverseCells(detectedPatterns.excludedCells, detectedPatterns.mwssCells);
 
