@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GameOfLife } from "@/components/game-of-life/game-of-life";
+import { GameOfLifeSession } from "@/components/game-of-life/game-of-life-session";
 import { QrGeneratorLauncher } from "@/components/qr-generator/qr-generator-launcher";
 import { QrScanner } from "@/components/qr-scanner/qr-scanner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,14 @@ type SharedScanParseResult = {
   scanResult: ScanResult | null;
 };
 
-const PLAYGROUND_SEED: LifeGrid = [];
+function createPlaygroundScanResult(): ScanResult {
+  return {
+    encodedQr: null,
+    mode: "playground",
+    qrValue: null,
+    seed: [],
+  };
+}
 
 function syncShareUrl(encodedQr: string | null, qrValue: string | null) {
   if (typeof window === "undefined") {
@@ -224,12 +231,16 @@ export function MainView() {
   if (scanResult) {
     return (
       <section className="relative h-full w-full overflow-hidden">
-        <GameOfLife
+        <GameOfLifeSession
           debug={gameDebugEnabled}
           mode={scanResult.mode}
           onScanAnother={() => {
             setShouldAutoStartScanner(true);
             setScanResult(null);
+          }}
+          onSwitchToPlayground={() => {
+            setShouldAutoStartScanner(false);
+            setScanResult(createPlaygroundScanResult());
           }}
           qrValue={scanResult.qrValue}
           seed={scanResult.seed}
@@ -286,12 +297,7 @@ export function MainView() {
           onOpenChange={setIsGeneratorOpen}
           onPlayground={() => {
             setShouldAutoStartScanner(false);
-            setScanResult({
-              encodedQr: null,
-              mode: "playground",
-              qrValue: null,
-              seed: PLAYGROUND_SEED,
-            });
+            setScanResult(createPlaygroundScanResult());
           }}
         />
 

@@ -91,8 +91,8 @@ describe("GameOfLifeSession", () => {
     const { container } = render(
       <GameOfLifeSession
         mode="playground"
-        onReset={() => {}}
         onScanAnother={() => {}}
+        onSwitchToPlayground={() => {}}
         qrValue={null}
         seed={[]}
       />,
@@ -151,8 +151,8 @@ describe("GameOfLifeSession", () => {
     const { container } = render(
       <GameOfLifeSession
         mode="playground"
-        onReset={() => {}}
         onScanAnother={() => {}}
+        onSwitchToPlayground={() => {}}
         qrValue={null}
         seed={[]}
       />,
@@ -207,8 +207,8 @@ describe("GameOfLifeSession", () => {
     const { container } = render(
       <GameOfLifeSession
         mode="playground"
-        onReset={() => {}}
         onScanAnother={() => {}}
+        onSwitchToPlayground={() => {}}
         qrValue={null}
         seed={[]}
       />,
@@ -235,8 +235,8 @@ describe("GameOfLifeSession", () => {
     const { container: qrContainer } = render(
       <GameOfLifeSession
         mode="qr"
-        onReset={() => {}}
         onScanAnother={() => {}}
+        onSwitchToPlayground={() => {}}
         qrValue="hello"
         seed={[[0, 0]]}
       />,
@@ -258,5 +258,132 @@ describe("GameOfLifeSession", () => {
     });
 
     expect(qrCanvas.setPointerCapture).toHaveBeenCalledWith(1);
+  });
+
+  it("shows Playground reset only after the first start and restores that state", async () => {
+    const { container } = render(
+      <GameOfLifeSession
+        mode="playground"
+        onScanAnother={() => {}}
+        onSwitchToPlayground={() => {}}
+        qrValue={null}
+        seed={[]}
+      />,
+    );
+    const canvas = container.querySelector("canvas");
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Canvas was not rendered.");
+    }
+
+    configureCanvas(canvas);
+
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+    fireEvent.pointerUp(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+
+    const startButton = screen.getByRole("button", { name: "Start" });
+
+    await waitFor(() => {
+      expect(startButton.getAttribute("disabled")).toBeNull();
+    });
+
+    fireEvent.click(startButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+    });
+
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Start" }).getAttribute("disabled"),
+    ).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "Clear cells" })
+        .getAttribute("disabled"),
+    ).toBeNull();
+  });
+
+  it("forgets the saved Playground reset state after clearing the field", async () => {
+    const { container } = render(
+      <GameOfLifeSession
+        mode="playground"
+        onScanAnother={() => {}}
+        onSwitchToPlayground={() => {}}
+        qrValue={null}
+        seed={[]}
+      />,
+    );
+    const canvas = container.querySelector("canvas");
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Canvas was not rendered.");
+    }
+
+    configureCanvas(canvas);
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+    fireEvent.pointerUp(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+
+    const startButton = screen.getByRole("button", { name: "Start" });
+
+    await waitFor(() => {
+      expect(startButton.getAttribute("disabled")).toBeNull();
+    });
+
+    fireEvent.click(startButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear cells" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Start" }).getAttribute("disabled"),
+    ).not.toBeNull();
   });
 });

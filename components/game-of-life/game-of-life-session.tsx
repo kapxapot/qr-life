@@ -69,8 +69,8 @@ import {
 export type GameOfLifeSessionProps = {
   debug?: boolean;
   mode?: "playground" | "qr";
-  onReset: () => void;
   onScanAnother: () => void;
+  onSwitchToPlayground: () => void;
   qrValue: string | null;
   seed: LifeGrid;
 };
@@ -91,11 +91,22 @@ type EditStroke = {
   toggledCellKeys: Set<string>;
 };
 
+type ResettableGameViewState = {
+  interactionMode: GameOfLifeInteractionMode;
+  isAutoZoomEnabled: boolean;
+  patternCells: FreeFlyingPatternCells;
+  population: number;
+  universe: LifeUniverse;
+  viewportBaseSpan: number;
+  viewportCenter: ViewportCenter;
+  zoomFactor: number;
+};
+
 export function GameOfLifeSession({
   debug = false,
   mode = "qr",
-  onReset,
   onScanAnother,
+  onSwitchToPlayground,
   qrValue,
   seed,
 }: GameOfLifeSessionProps) {
@@ -112,6 +123,9 @@ export function GameOfLifeSession({
   const resizeFrameRef = useRef<number | null>(null);
   const simulationTimerRef = useRef<number | null>(null);
   const initialGameViewStateRef = useRef(initialGameViewState);
+  const savedPlaygroundStartStateRef = useRef<ResettableGameViewState | null>(
+    null,
+  );
   const largestViewportBaseSpanRef = useRef(
     initialGameViewState.viewportBaseSpan,
   );
@@ -143,6 +157,8 @@ export function GameOfLifeSession({
   const [shareFeedback, setShareFeedback] =
     useState<ShareFeedbackState>("idle");
   const [hasStartedOnce, setHasStartedOnce] = useState(false);
+  const [hasSavedPlaygroundStartState, setHasSavedPlaygroundStartState] =
+    useState(false);
   const [hasLoadedTickDelayPreference, setHasLoadedTickDelayPreference] =
     useState(false);
   const [interactionMode, setInteractionMode] =
@@ -181,6 +197,27 @@ export function GameOfLifeSession({
       shareFeedbackTimerRef.current = null;
     }
   }, []);
+
+  const clearSavedPlaygroundStartState = useCallback(() => {
+    savedPlaygroundStartStateRef.current = null;
+    setHasSavedPlaygroundStartState(false);
+  }, []);
+
+  const createResettableInitialGameViewState = useCallback(
+    (
+      nextInitialGameViewState = initialGameViewStateRef.current,
+    ): ResettableGameViewState => ({
+      interactionMode: initialInteractionMode,
+      isAutoZoomEnabled: true,
+      patternCells: nextInitialGameViewState.patternCells,
+      population: nextInitialGameViewState.population,
+      universe: nextInitialGameViewState.universe,
+      viewportBaseSpan: nextInitialGameViewState.viewportBaseSpan,
+      viewportCenter: nextInitialGameViewState.viewportCenter,
+      zoomFactor: AUTO_FIT_ZOOM_FACTOR,
+    }),
+    [initialInteractionMode],
+  );
 
   const releaseCanvasPointerCapture = useCallback((pointerId: number) => {
     const canvas = canvasRef.current;
@@ -533,41 +570,65 @@ export function GameOfLifeSession({
   );
 
   const restoreInitialGameView = useCallback(
-    (nextInitialGameViewState = initialGameViewStateRef.current) => {
-      const nextUniverse = cloneUniverse(nextInitialGameViewState.universe);
+    (nextGameViewState?: ResettableGameViewState) => {
+      const resolvedGameViewState =
+        nextGameViewState ?? createResettableInitialGameViewState();
+      const nextUniverse = cloneUniverse(resolvedGameViewState.universe);
+      const nextPatternCells = cloneFreeFlyingPatternCells(
+        resolvedGameViewState.patternCells,
+      );
 
+      stopSimulation();
       resetCanvasInteractions();
       autofitBoundsRef.current = null;
       largestViewportBaseSpanRef.current =
-        nextInitialGameViewState.viewportBaseSpan;
-      viewportCenterRef.current = nextInitialGameViewState.viewportCenter;
+        resolvedGameViewState.viewportBaseSpan;
+      viewportCenterRef.current = resolvedGameViewState.viewportCenter;
       universeRef.current = nextUniverse;
-      patternCellsRef.current = cloneFreeFlyingPatternCells(
-        nextInitialGameViewState.patternCells,
-      );
+      patternCellsRef.current = nextPatternCells;
       setUniverse(nextUniverse);
-      setPatternCells(
-        cloneFreeFlyingPatternCells(nextInitialGameViewState.patternCells),
-      );
-      setIsAutoZoomEnabled(true);
-      isAutoZoomEnabledRef.current = true;
-      setZoomFactor(AUTO_FIT_ZOOM_FACTOR);
-      zoomFactorRef.current = AUTO_FIT_ZOOM_FACTOR;
+      setPatternCells(nextPatternCells);
+      setIsAutoZoomEnabled(resolvedGameViewState.isAutoZoomEnabled);
+      isAutoZoomEnabledRef.current = resolvedGameViewState.isAutoZoomEnabled;
+      setZoomFactor(resolvedGameViewState.zoomFactor);
+      zoomFactorRef.current = resolvedGameViewState.zoomFactor;
       setGeneration(0);
       setHasStartedOnce(false);
-      pausedInteractionModeRef.current = initialInteractionMode;
+      pausedInteractionModeRef.current = resolvedGameViewState.interactionMode;
       pendingAutoZoomRestoreRef.current = false;
-      setInteractionMode(initialInteractionMode);
-      setPopulation(nextInitialGameViewState.population);
+      setInteractionMode(resolvedGameViewState.interactionMode);
+      setPopulation(resolvedGameViewState.population);
 
       redrawUniverse({
-        isAutoZoomEnabled: true,
+        isAutoZoomEnabled: resolvedGameViewState.isAutoZoomEnabled,
+        patternCells: nextPatternCells,
         universe: nextUniverse,
-        viewportCenter: nextInitialGameViewState.viewportCenter,
-        zoomFactor: AUTO_FIT_ZOOM_FACTOR,
+        viewportCenter: resolvedGameViewState.viewportCenter,
+        zoomFactor: resolvedGameViewState.zoomFactor,
       });
     },
-    [initialInteractionMode, redrawUniverse, resetCanvasInteractions],
+    [
+      createResettableInitialGameViewState,
+      redrawUniverse,
+      resetCanvasInteractions,
+      stopSimulation,
+    ],
+  );
+
+  const captureCurrentPlaygroundStartState = useCallback(
+    (
+      nextInteractionMode: GameOfLifeInteractionMode = interactionModeRef.current,
+    ): ResettableGameViewState => ({
+      interactionMode: nextInteractionMode,
+      isAutoZoomEnabled: isAutoZoomEnabledRef.current,
+      patternCells: cloneFreeFlyingPatternCells(patternCellsRef.current),
+      population: countPopulation(universeRef.current),
+      universe: cloneUniverse(universeRef.current),
+      viewportBaseSpan: largestViewportBaseSpanRef.current,
+      viewportCenter: { ...viewportCenterRef.current },
+      zoomFactor: zoomFactorRef.current,
+    }),
+    [],
   );
 
   const enableAutoZoomForCurrentUniverse = useCallback(() => {
@@ -665,6 +726,14 @@ export function GameOfLifeSession({
         }
         pendingAutoZoomRestoreRef.current = false;
         pausedInteractionModeRef.current = interactionModeRef.current;
+        if (
+          mode === "playground" &&
+          savedPlaygroundStartStateRef.current === null
+        ) {
+          savedPlaygroundStartStateRef.current =
+            captureCurrentPlaygroundStartState(interactionModeRef.current);
+          setHasSavedPlaygroundStartState(true);
+        }
         setInteractionMode("pan");
       } else {
         setInteractionMode(pausedInteractionModeRef.current);
@@ -672,7 +741,12 @@ export function GameOfLifeSession({
 
       return nextRunningState;
     });
-  }, [enableAutoZoomForCurrentUniverse, resetCanvasInteractions]);
+  }, [
+    captureCurrentPlaygroundStartState,
+    enableAutoZoomForCurrentUniverse,
+    mode,
+    resetCanvasInteractions,
+  ]);
 
   const handleZoomIn = useCallback(() => {
     const canvas = canvasRef.current;
@@ -711,6 +785,13 @@ export function GameOfLifeSession({
   }, [enableAutoZoomForCurrentUniverse]);
 
   const handleClear = useCallback(() => {
+    clearSavedPlaygroundStartState();
+
+    if (mode === "qr") {
+      onSwitchToPlayground();
+      return;
+    }
+
     const shouldRestoreAutoZoom =
       isAutoZoomEnabledRef.current || pendingAutoZoomRestoreRef.current;
     const nextUniverse = new Set<string>();
@@ -742,7 +823,38 @@ export function GameOfLifeSession({
       viewportCenter: clearedViewState.viewportCenter,
       zoomFactor: AUTO_FIT_ZOOM_FACTOR,
     });
-  }, [redrawUniverse, resetCanvasInteractions]);
+  }, [
+    clearSavedPlaygroundStartState,
+    mode,
+    onSwitchToPlayground,
+    redrawUniverse,
+    resetCanvasInteractions,
+  ]);
+
+  const handleReset = useCallback(() => {
+    clearCopyFeedbackTimer();
+    clearShareFeedbackTimer();
+    setCopyFeedback("idle");
+    setShareFeedback("idle");
+
+    if (mode === "playground") {
+      const savedPlaygroundStartState = savedPlaygroundStartStateRef.current;
+
+      if (!savedPlaygroundStartState) {
+        return;
+      }
+
+      restoreInitialGameView(savedPlaygroundStartState);
+      return;
+    }
+
+    restoreInitialGameView();
+  }, [
+    clearCopyFeedbackTimer,
+    clearShareFeedbackTimer,
+    mode,
+    restoreInitialGameView,
+  ]);
 
   const handleCanvasWheel = useCallback(
     (event: ReactWheelEvent<HTMLCanvasElement>) => {
@@ -1071,6 +1183,7 @@ export function GameOfLifeSession({
     stopSimulation();
     clearCopyFeedbackTimer();
     clearShareFeedbackTimer();
+    clearSavedPlaygroundStartState();
     const nextInitialGameViewState = createInitialGameViewState(seed, {
       emptyViewportBaseSpan:
         mode === "playground"
@@ -1081,10 +1194,14 @@ export function GameOfLifeSession({
     initialGameViewStateRef.current = nextInitialGameViewState;
     setCopyFeedback("idle");
     setShareFeedback("idle");
-    restoreInitialGameView(nextInitialGameViewState);
+    restoreInitialGameView(
+      createResettableInitialGameViewState(nextInitialGameViewState),
+    );
   }, [
     clearCopyFeedbackTimer,
     clearShareFeedbackTimer,
+    clearSavedPlaygroundStartState,
+    createResettableInitialGameViewState,
     restoreInitialGameView,
     mode,
     seed,
@@ -1246,6 +1363,7 @@ export function GameOfLifeSession({
     typeof navigator !== "undefined" &&
     (typeof navigator.share === "function" ||
       typeof navigator.clipboard?.writeText === "function");
+  const showReset = mode === "qr" || hasSavedPlaygroundStartState;
   const startButtonLabel = isRunning
     ? "Pause"
     : hasStartedOnce
@@ -1334,14 +1452,14 @@ export function GameOfLifeSession({
             canShareCurrentUrl={canShareCurrentUrl}
             copyFeedback={copyFeedback}
             onCopyQrValue={handleCopyQrValue}
-            onReset={onReset}
+            onReset={handleReset}
             onScanAnother={onScanAnother}
             onShareCurrentUrl={handleShareCurrentUrl}
             onStart={handleStart}
             qrValue={qrValue}
             shareFeedback={shareFeedback}
             showQrDetails={mode === "qr"}
-            showReset={mode === "qr"}
+            showReset={showReset}
             startDisabled={isStartDisabled}
             startButtonLabel={startButtonLabel}
           />
