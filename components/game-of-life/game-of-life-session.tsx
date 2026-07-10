@@ -126,6 +126,7 @@ export function GameOfLifeSession({
   const savedPlaygroundStartStateRef = useRef<ResettableGameViewState | null>(
     null,
   );
+  const hasEditedPlaygroundSinceSavedStartRef = useRef(false);
   const largestViewportBaseSpanRef = useRef(
     initialGameViewState.viewportBaseSpan,
   );
@@ -200,6 +201,7 @@ export function GameOfLifeSession({
 
   const clearSavedPlaygroundStartState = useCallback(() => {
     savedPlaygroundStartStateRef.current = null;
+    hasEditedPlaygroundSinceSavedStartRef.current = false;
     setHasSavedPlaygroundStartState(false);
   }, []);
 
@@ -418,6 +420,10 @@ export function GameOfLifeSession({
       const nextPatternCells = getFreeFlyingPatternCells(nextUniverse);
       const nextPopulation = countPopulation(nextUniverse);
 
+      if (mode === "playground") {
+        hasEditedPlaygroundSinceSavedStartRef.current = true;
+      }
+
       disableAutoZoom();
       universeRef.current = nextUniverse;
       patternCellsRef.current = nextPatternCells;
@@ -430,7 +436,7 @@ export function GameOfLifeSession({
         universe: nextUniverse,
       });
     },
-    [disableAutoZoom, redrawUniverse],
+    [disableAutoZoom, mode, redrawUniverse],
   );
 
   const toggleCellsAlongWorldSegment = useCallback(
@@ -596,6 +602,7 @@ export function GameOfLifeSession({
       setHasStartedOnce(false);
       pausedInteractionModeRef.current = resolvedGameViewState.interactionMode;
       pendingAutoZoomRestoreRef.current = false;
+      hasEditedPlaygroundSinceSavedStartRef.current = false;
       setInteractionMode(resolvedGameViewState.interactionMode);
       setPopulation(resolvedGameViewState.population);
 
@@ -728,10 +735,12 @@ export function GameOfLifeSession({
         pausedInteractionModeRef.current = interactionModeRef.current;
         if (
           mode === "playground" &&
-          savedPlaygroundStartStateRef.current === null
+          (savedPlaygroundStartStateRef.current === null ||
+            hasEditedPlaygroundSinceSavedStartRef.current)
         ) {
           savedPlaygroundStartStateRef.current =
             captureCurrentPlaygroundStartState(interactionModeRef.current);
+          hasEditedPlaygroundSinceSavedStartRef.current = false;
           setHasSavedPlaygroundStartState(true);
         }
         setInteractionMode("pan");

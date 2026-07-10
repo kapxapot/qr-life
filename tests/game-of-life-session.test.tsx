@@ -86,6 +86,10 @@ function configureCanvas(canvas: HTMLCanvasElement) {
   });
 }
 
+function getPopulationValue() {
+  return screen.getByText("Cells").parentElement?.textContent ?? "";
+}
+
 describe("GameOfLifeSession", () => {
   it("starts on the first tap after a touch edit", async () => {
     const { container } = render(
@@ -385,5 +389,103 @@ describe("GameOfLifeSession", () => {
     expect(
       screen.getByRole("button", { name: "Start" }).getAttribute("disabled"),
     ).not.toBeNull();
+  });
+
+  it("replaces the saved Playground reset state after reset, edit, and start", async () => {
+    const { container } = render(
+      <GameOfLifeSession
+        mode="playground"
+        onScanAnother={() => {}}
+        onSwitchToPlayground={() => {}}
+        qrValue={null}
+        seed={[]}
+      />,
+    );
+    const canvas = container.querySelector("canvas");
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error("Canvas was not rendered.");
+    }
+
+    configureCanvas(canvas);
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+    fireEvent.pointerUp(canvas, {
+      button: 0,
+      clientX: 85,
+      clientY: 85,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Start" }).getAttribute("disabled"),
+      ).toBeNull();
+      expect(getPopulationValue()).toContain("1");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+      expect(getPopulationValue()).toContain("1");
+    });
+
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: 105,
+      clientY: 85,
+      pointerId: 2,
+      pointerType: "mouse",
+    });
+    fireEvent.pointerUp(canvas, {
+      button: 0,
+      clientX: 105,
+      clientY: 85,
+      pointerId: 2,
+      pointerType: "mouse",
+    });
+
+    await waitFor(() => {
+      expect(getPopulationValue()).toContain("2");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+      expect(getPopulationValue()).toContain("2");
+    });
   });
 });
