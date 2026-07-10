@@ -18,7 +18,7 @@ import { createQrSeedFromText } from "@/lib/qr/qr-generator";
 import { decodeSharedQrSeed, encodeSharedQrSeed } from "@/lib/qr/qr-share";
 import {
   readSharedQrValue,
-  syncSharedScanSearchParams,
+  syncSharedScanUrl,
 } from "@/lib/qr/share-search-params";
 import Footer from "./footer";
 
@@ -49,7 +49,7 @@ function syncShareUrl(encodedQr: string | null, qrValue: string | null) {
   }
 
   const url = new URL(window.location.href);
-  syncSharedScanSearchParams(url.searchParams, encodedQr, qrValue);
+  syncSharedScanUrl(url, encodedQr, qrValue);
 
   const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
   const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -59,10 +59,16 @@ function syncShareUrl(encodedQr: string | null, qrValue: string | null) {
   }
 }
 
-function parseSharedScanFromSearch(search: string): SharedScanParseResult {
+function parseSharedScanFromLocation(
+  search: string,
+  pathValue: string | null,
+): SharedScanParseResult {
   const searchParams = new URLSearchParams(search);
   const encodedQr = searchParams.get("qr");
-  const value = readSharedQrValue(searchParams);
+  const value =
+    encodedQr === null
+      ? (pathValue ?? readSharedQrValue(searchParams))
+      : readSharedQrValue(searchParams);
 
   if (encodedQr === null) {
     if (value !== null) {
@@ -166,7 +172,11 @@ function InvalidShareDialog({
   );
 }
 
-export function MainView() {
+export function MainView({
+  initialPathValue = null,
+}: {
+  initialPathValue?: string | null;
+}) {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [shouldAutoStartScanner, setShouldAutoStartScanner] = useState(false);
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
@@ -184,7 +194,10 @@ export function MainView() {
       return;
     }
 
-    const nextSharedScan = parseSharedScanFromSearch(window.location.search);
+    const nextSharedScan = parseSharedScanFromLocation(
+      window.location.search,
+      initialPathValue,
+    );
     const debugMode = new URLSearchParams(window.location.search).get("debug");
 
     setGameDebugEnabled(
@@ -202,7 +215,7 @@ export function MainView() {
     }
 
     setHasResolvedInitialShareLink(true);
-  }, []);
+  }, [initialPathValue]);
 
   useEffect(() => {
     if (!hasResolvedInitialShareLink) {

@@ -34,6 +34,33 @@ afterEach(() => {
 });
 
 describe("MainView", () => {
+  it("opens value-only shared links from the canonical pathname", async () => {
+    window.history.replaceState(window.history.state, "", "/hello");
+
+    render(<MainView initialPathValue="hello" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("game-mode").textContent).toBe("qr");
+    });
+
+    expect(screen.getByTestId("game-qr-value").textContent).toBe("hello");
+  });
+
+  it("canonicalizes legacy value-only share urls to the pathname", async () => {
+    window.history.replaceState(window.history.state, "", "/?v=hello&debug=1");
+
+    render(<MainView />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("game-mode").textContent).toBe("qr");
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/hello");
+      expect(window.location.search).toBe("?debug=1");
+    });
+  });
+
   it("clears the shared QR params when a QR session switches to Playground", async () => {
     window.history.replaceState(window.history.state, "", "/?v=hello");
 
@@ -52,6 +79,7 @@ describe("MainView", () => {
     await waitFor(() => {
       expect(screen.getByTestId("game-mode").textContent).toBe("playground");
       expect(screen.getByTestId("game-qr-value").textContent).toBe("");
+      expect(window.location.pathname).toBe("/");
       expect(window.location.search).toBe("");
     });
   });
