@@ -1,31 +1,53 @@
+import Image from "next/image";
+
 export default function Footer() {
   return (
-    <div className="text-xs text-muted-foreground flex gap-2 items-center">
-      <span>&copy; 2026</span>
-      <span>
-        Created by{" "}
+    <div className="text-xs text-muted-foreground flex flex-col gap-1 items-center">
+      <div className="flex gap-2 items-center">
+        <span>&copy; 2026</span>
+        <span>
+          Created by{" "}
+          <a
+            href="https://github.com/kapxapot"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline"
+          >
+            Sergey Atroshchenko
+          </a>
+        </span>
+
         <a
-          href="https://github.com/kapxapot"
+          href="https://x.com/kapxapot"
           target="_blank"
           rel="noopener noreferrer"
-          className="hover:underline"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="X (Twitter)"
         >
-          Sergey Atroshchenko
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <title>X (Twitter)</title>
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
         </a>
-      </span>
+      </div>
 
-      <a
-        href="https://x.com/kapxapot"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-muted-foreground hover:text-foreground transition-colors"
-        aria-label="X (Twitter)"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-          <title>X (Twitter)</title>
-          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-        </svg>
-      </a>
+      <div className="flex items-center gap-1">
+        <span>Turn any name into an avatar:</span>
+        <a
+          href="https://nametoavatar.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold hover:underline flex items-center gap-1"
+        >
+          <Image
+            src="https://nametoavatar.com/favicon/favicon-32x32.png"
+            alt="Name to Avatar"
+            width={16}
+            height={16}
+          />
+          Name to Avatar
+        </a>
+      </div>
     </div>
   );
 }
