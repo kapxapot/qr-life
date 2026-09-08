@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
         hostname: "nametoavatar.com",
         pathname: "/favicon/**",
       },
+      {
+        protocol: "https",
+        hostname: "stayup.lol",
+        pathname: "/**",
+      },
     ],
   },
   reactCompiler: true,
