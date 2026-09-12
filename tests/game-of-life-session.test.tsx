@@ -207,6 +207,43 @@ describe("GameOfLifeSession", () => {
     });
   });
 
+  it("keeps Home mounted through the follow-up touch click", async () => {
+    const onScanAnother = vi.fn();
+
+    render(
+      <GameOfLifeSession
+        mode="playground"
+        onScanAnother={onScanAnother}
+        onSwitchToPlayground={() => {}}
+        qrValue={null}
+        seed={[]}
+      />,
+    );
+
+    const homeButton = screen.getByRole("button", { name: "Home" });
+
+    fireEvent.pointerDown(homeButton, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+    fireEvent.pointerUp(homeButton, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+
+    expect(onScanAnother).not.toHaveBeenCalled();
+
+    fireEvent.click(homeButton);
+
+    expect(onScanAnother).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(onScanAnother).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("does not capture edit strokes while still capturing panning gestures", () => {
     const { container } = render(
       <GameOfLifeSession

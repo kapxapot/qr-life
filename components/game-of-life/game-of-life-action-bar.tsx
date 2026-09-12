@@ -58,11 +58,17 @@ export function GameOfLifeActionBar({
       ? RiCheckLine
       : RiShareLine;
 
+  const handleHome = () => {
+    // Keep this button mounted until the browser dispatches its follow-up click.
+    // Otherwise, a touch pointerup can expose and activate the footer link below.
+    window.setTimeout(onScanAnother, 0);
+  };
+
   return (
     <div className="shrink-0 px-3 sm:px-4">
       <div className="flex flex-wrap gap-3 justify-end sm:justify-center">
         <Button
-          onClick={onScanAnother}
+          onClick={handleHome}
           variant="glass"
           className="h-auto px-5 py-2.5 text-sm font-semibold"
         >
